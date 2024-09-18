@@ -87,9 +87,12 @@
       styles: default
       timeseriesServiceUri: lbda_v2/pmdi
       description: >-
-        Palmer’s Modified Drought Index: Jun–Aug.; <=-4.00 extreme drought;
-        -3.00 to-3.99 severe drought; -2.00 to -2.99 moderate dought, -1.99 to
-        1.99 midrange; 2.00 to 2.99 moderately moist; 3.00 to 3.99 very moist;
+        Palmer’s Modified Drought Index: Negative values indicate dry conditions;
+        positive values indicate wet conditions.
+        -5=Exceptional Dry, 0=Normal, 5=Exceptional Wet;
+        Jun–Aug.; <=-4.00 extreme drought; -3.00 to-3.99 severe drought;
+        -2.00 to -2.99 moderate dought, -1.99 to 1.99 midrange;
+        2.00 to 2.99 moderately moist; 3.00 to 3.99 very moist;
         >=4.00 extremely moist.
   sourceUrl: 'https://www.ncdc.noaa.gov/paleo-search/study/22454'
 - id: srtm
@@ -278,17 +281,17 @@
     - id: gdd_may_sept
       class: Temperature
       name: Summer (May-Sept) Growing Degree Days
-      units: °F
+      units: °F GDD
       timeseriesServiceUri: paleocar_v2/gdd_may_sept
       wmsLayer: 'SKOPE:paleocar_v2_gdd_may_sept_${year}'
       min: 0
       max: 10
       visible: false
       styles: 'default,raster'
-      description: 'F deg.; Growing Season: May–Sept.'
+      description: '°F deg.; Growing Season: May–Sept.; Divide °F GDD by 1.8 to get °C GDD'
     - id: maize_farming_niche
       class: Crop Niche
-      name: Maize Farming Niche (Direct Precip.)
+      name: Maize Farming Niche (Proportion w/i Niche - Direct Precip)
       units:
       timeseriesServiceUri: paleocar_v2/maize_farming_niche
       wmsLayer: 'SKOPE:paleocar_v2_maize_farming_niche_${year}'
@@ -431,11 +434,11 @@
     - id: gdd_may_sept
       class: Temperature
       name: Summer (May-Sept) Growing Degree Days
-      units: °F
+      units: °F GDD
       timeseriesServiceUri: paleocar_v3/gdd_may_sept
       wmsLayer: 'SKOPE:paleocar_v3_gdd_may_sept_${year}'
       min: 0
       max: 10
       visible: false
       styles: 'default,raster'
-      description: 'F deg.; Growing Season: May–Sept.'
+      description: '°F deg.; Growing Season: May–Sept.; Divide °F GDD by 1.8 to get °C GDD'
