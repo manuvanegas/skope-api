@@ -1,0 +1,54 @@
+name: skope-api
+services:
+  geoserver:
+    environment:
+      GEOSERVER_ADMIN_PASSWORD_FILE: /run/secrets/geoserver_admin_password
+      # GEOSERVER_ADMIN_PASSWORD_FILE: /geoserver/docker/secrets/geoserver_admin_password
+      GEOSERVER_ADMIN_USER: skope
+      STABLE_EXTENSIONS: importer-plugin
+      TOMCAT_EXTRAS: "false"
+    image: kartoza/geoserver:2.20.4
+    platform: linux/amd64
+    volumes:
+      - /Users/mvanega1/Documents/ASU/CoMSES/SKoPE/skope-api/geoserver/docker/secrets:/run/secrets
+    networks:
+      default: null
+    ports:
+    - mode: ingress
+      host_ip: 127.0.0.1
+      target: 8080
+      published: "8600"
+      protocol: tcp
+  server:
+    build:
+      context: /Users/mvanega1/Documents/ASU/CoMSES/SKoPE/skope-api/timeseries
+      dockerfile: deploy/Dockerfile
+      args:
+        ENVIRONMENT: dev
+    image: openskope/skope-api:latest
+    platform: linux/amd64
+    networks:
+      default: null
+    environment:
+      - PYTHONPATH=/code
+    ports:
+    - mode: ingress
+      host_ip: 127.0.0.1
+      target: 8000
+      published: "8001"
+      protocol: tcp
+    restart: always
+    volumes:
+    - type: bind
+      source: /Users/mvanega1/Documents/ASU/CoMSES/SKoPE/skope-api/timeseries
+      target: /code
+      bind:
+        create_host_path: true
+    - type: bind
+      source: /Users/mvanega1/Documents/ASU/CoMSES/SKoPE/skope-api/docker/shared
+      target: /shared
+      bind:
+        create_host_path: true
+networks:
+  default:
+    name: skope-api_default

@@ -31,8 +31,8 @@ make deploy
 Try out the analysis endpoint
 
 ```bash
-http --json POST localhost:8002/datasets/yearly < yearly.json 
-http --json POST localhost:8002/datasets/monthly < monthly.json 
+http --json POST localhost:8001/timeseries < timeseries/data/requests/yearly.json 
+http --json POST localhost:8002/timeseries < timeseries/data/requests/monthly.json 
 ```
 
 Run the tests

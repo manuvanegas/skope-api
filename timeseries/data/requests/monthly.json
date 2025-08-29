@@ -3,14 +3,8 @@
   "dataset_id": "monthly_5x5x60_dataset",
   "variable_id": "float32_variable",
   "time_range": {
-    "gte": {
-      "year": 1,
-      "month": 2
-    },
-    "lte": {
-      "year": 3,
-      "month": 1
-    }
+    "gte": "0001-02-01",
+    "lte": "0003-01-31"
   },
   "selected_area": {
     "type": "Point",

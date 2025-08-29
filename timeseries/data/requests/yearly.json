@@ -1,11 +1,6 @@
 {
-  "resolution": "year",
   "dataset_id": "annual_5x5x5_dataset",
   "variable_id": "float32_variable",
-  "time_range": {
-    "gte": 2,
-    "lte": 6
-  },
   "selected_area": {
     "type": "Point",
     "coordinates": [
@@ -13,12 +8,23 @@
       42.5
     ]
   },
+  "time_range": {
+    "gte": "0001-02-05",
+    "lte": "0004-02-06"
+  },
   "zonal_statistic": "mean",
-  "transforms": [
+  "transform": {
+    "type": "ZScoreMovingInterval",
+    "width": 1
+  },
+  "requested_series_options": [
     {
-      "type": "MovingAverageSmoother",
-      "method": "centered",
-      "width": 1
+      "name": "transformed",
+      "smoother": {
+        "type": "MovingAverageSmoother",
+        "method": "centered",
+        "width": 1
+      }
     }
   ]
 }
