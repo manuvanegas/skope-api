@@ -1,3 +1,5 @@
+base_uri: 'timeseries'
+max_processing_time: 10000
 name: 'SKOPE Production API Services'
 store:
   base_path: '/data'

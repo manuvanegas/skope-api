@@ -3,12 +3,10 @@ services:
     build:
       args:
         ENVIRONMENT: dev
-      dockerfile: deploy/Dockerfile
     image: openskope/skope-api:latest
     volumes:
-      - ./timeseries:/code
+      - ./timeseries/app:/code/app
+      - ./timeseries/metadata.yml:/code/metadata.yml
+      - ../bnd_data.nosync:/data
     ports:
     - "127.0.0.1:8001:8000"
-  geoserver:
-    ports:
-    - "127.0.0.1:8600:8080"

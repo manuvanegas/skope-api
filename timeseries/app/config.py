@@ -10,9 +10,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-YAML_CONFIG_PATH = "deploy/settings/config.yml"
-
-
 class Store(BaseModel):
     base_path: str
     template: str
@@ -20,7 +17,7 @@ class Store(BaseModel):
 
 
 def yaml_config_settings_source(settings: BaseSettings) -> Dict[str, Any]:
-    with Path(YAML_CONFIG_PATH).open() as f:
+    with Path("config/app_settings.yml").open() as f:
         return yaml.safe_load(f) or {}
 
 
@@ -47,7 +44,7 @@ class Settings(BaseSettings):
 
     @property
     def logging_config_file(self):
-        return f"deploy/logging/{self.environment}.yml"
+        return "config/logging.yml"
 
     @property
     def metadata_path(self):

@@ -1,0 +1,34 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    restart: always
+    volumes:
+      - ./img_logs:/shared
+    environment:
+      TITILER_BASE_URL: http://titiler:8000 # TODO: set as env constant
+      S3_BUCKET_NAME: my-geospatial-data-bucket
+      AWS_NO_SIGN_REQUEST: YES
+    networks:
+      - internal_geospatial_net # Internal network to see Titiler
+      - default # External access to reach S3 and serve the frontend
+  titiler:
+    image: ghcr.io/developmentseed/titiler:latest
+    restart: always
+    environment:
+      CPL_VSIL_CURL_ALLOWED_EXTENSIONS: .tif,.ovr
+      GDAL_DISABLE_READDIR_ON_OPEN: EMPTY_DIR
+      AWS_NO_SIGN_REQUEST: YES
+      # GEOSERVER_ADMIN_PASSWORD_FILE: /run/secrets/geoserver_admin_password
+      # GEOSERVER_ADMIN_USER: skope
+      # STABLE_EXTENSIONS: importer-plugin
+      # TOMCAT_EXTRAS: "false"
+    # image: kartoza/geoserver:2.20.4
+    networks:
+      # Titiler is ONLY on the internal network.
+      - internal_geospatial_net
+
+networks:
+  internal_geospatial_net:
+    driver: bridge

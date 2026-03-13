@@ -1,0 +1,7 @@
+base_uri: 'timeseries'
+max_processing_time: 10000
+name: 'SKOPE Development / Testing API'
+store:
+  base_path: 'data'
+  template: 'data/{dataset_id}/{variable_id}'
+  uncertainty_template: 'data/{dataset_id}/{variable_id}_uncertainty'

@@ -1,34 +1,39 @@
-include config.mk
+-include config.mk # use a minus (-) so Make doesn't crash if it's missing
 
-UID=$(shell id -u)
-GID=$(shell id -g)
+DOCKER_SHARE_MOUNT=img_logs
 
-GEOSERVER_ADMIN_PASSWORD_PATH=geoserver/docker/secrets/geoserver_admin_password
-DOCKER_SHARE_MOUNT=docker/shared
+# Set the default ENVIRONMENT to dev if it hasn't been set by config.mk or the CLI
+ENVIRONMENT ?= dev
 
-.PHONY: help
-help: 	##- Instructions for using this Makefile. Run ./configure {dev|staging|prod} first
+.PHONY: help init build deploy
+
+# Make 'help' the default target if someone just types `make`
+.DEFAULT_GOAL := help
+
+help:   ##- Instructions for using this Makefile.
 	@echo "usage: make [target] ..."
+	@echo "Run 'make init' first to generate your local config.mk file."
 	@echo "targets:"
 	@sed -e '/#\{2\}-/!d; s/\\$$//; s/:[^#\t]*/:/; s/#\{2\}- *//' $(MAKEFILE_LIST)
 
-.PHONY: build
-build: docker-compose.yml | $(GEOSERVER_ADMIN_PASSWORD_PATH) 	##- Build and pull the required docker images 
-	docker compose build --pull
+# Target to physically create the config.mk file
+config.mk:
+	@echo "Generating default config.mk..."
+	@echo "ENVIRONMENT=dev" > config.mk
+	@echo "# Change to 'prod' for production deployment" >> config.mk
 
-$(GEOSERVER_ADMIN_PASSWORD_PATH):
-	echo "Creating geoserver secret"; \
-	mkdir -p geoserver/docker/secrets; \
-	echo -n $$(openssl rand -base64 22) > geoserver/docker/secrets/geoserver_admin_password
+init: config.mk ##- Initialize the local workspace with default configuration files
+	@echo "Initialized config.mk. You can edit it now, or just run 'make deploy'."
 
-docker-compose.yml: deploy/base.yml deploy/$(ENVIRONMENT).yml timeseries/deploy/Dockerfile config.mk
+build: deploy/compose/base.yml deploy/compose/$(ENVIRONMENT).yml deploy/Dockerfile
+	@echo "Building for ENVIRONMENT: $(ENVIRONMENT)"
 	case "$(ENVIRONMENT)" in \
-	  dev|prod) docker compose -f deploy/base.yml -f "deploy/$(ENVIRONMENT).yml" --project-directory . config > docker-compose.yml;; \
+	  dev|prod) docker compose -f deploy/compose/base.yml -f "deploy/compose/$(ENVIRONMENT).yml" --project-directory . config > docker-compose.yml;; \
 	  *) echo "invalid environment. must be dev or prod" 1>&2; exit 1;; \
 	esac
+	docker compose build --pull
 
-.PHONY: deploy
-deploy: build 	##- build and deploy the web app 
+deploy: build   ##- build and deploy the web app 
 	mkdir -p $(DOCKER_SHARE_MOUNT)
 	docker compose up -d
 
