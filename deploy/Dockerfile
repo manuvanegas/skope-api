@@ -1,4 +1,4 @@
-FROM python:3.10
+FROM python:3.13
 
 ARG ENVIRONMENT
 ENV ENVIRONMENT="${ENVIRONMENT}"
@@ -7,12 +7,12 @@ RUN apt-get update && apt-get install -y libgdal-dev && rm -rf /var/lib/apt/list
 
 WORKDIR /code
 
-RUN pip install --no-cache-dir --upgrade pip "setuptools<70.0.0" wheel "Cython<3.0.0" "numpy<1.24" # probably just need to update the stack, but for now...
+RUN pip install --no-cache-dir --upgrade pip
 
 COPY deploy/requirements /code/requirements
 
 RUN mkdir /shared && \
-    pip install --no-cache-dir --no-build-isolation \
+    pip install --no-cache-dir \
     -r requirements/base.txt -r requirements/${ENVIRONMENT}.txt
 
 COPY deploy/logging/${ENVIRONMENT}.yml /code/config/logging.yml

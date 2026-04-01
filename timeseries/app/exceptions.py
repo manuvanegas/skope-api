@@ -1,5 +1,4 @@
 from fastapi.exceptions import RequestValidationError
-from pydantic.error_wrappers import ErrorWrapper
 
 
 class TimeseriesTimeoutError(Exception):
@@ -13,7 +12,13 @@ class TimeseriesValidationError(Exception):
     field = "__root__"
 
     def to_request_validation_error(self):
-        return RequestValidationError([ErrorWrapper(self, ("body", self.field))])
+        return RequestValidationError([{
+        "type": "value_error",
+        "loc": ("body", self.field),
+        "msg": str(self),
+        "input": None,
+        "ctx": {"error": self},
+    }])
 
 
 class TimeRangeInvalid(TimeseriesValidationError):

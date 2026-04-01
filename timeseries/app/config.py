@@ -1,8 +1,14 @@
 from functools import lru_cache
 from logging.config import dictConfig
 from pathlib import Path
-from pydantic import BaseSettings, BaseModel
-from typing import Dict, Any
+from typing import List, Tuple, Type
+from pydantic import BaseModel
+from pydantic_settings import (
+    BaseSettings,
+    SettingsConfigDict,
+    PydanticBaseSettingsSource,
+    YamlConfigSettingsSource,
+)
 
 import yaml
 import logging
@@ -16,20 +22,19 @@ class Store(BaseModel):
     uncertainty_template: str
 
 
-def yaml_config_settings_source(settings: BaseSettings) -> Dict[str, Any]:
-    with Path("config/app_settings.yml").open() as f:
-        return yaml.safe_load(f) or {}
-
-
 class Settings(BaseSettings):
-    allowed_origins = ["*"]
-    environment = "dev"
-    name = "SKOPE API Services (development)"
-    base_uri = "timeseries"
-    max_processing_time = 15000  # in milliseconds
-    default_max_cells = 500000  # max number of cells to extract from data cubes
+    allowed_origins: List[str] = ["*"]
+    environment: str = "dev"
+    name: str = "SKOPE API Services (development)"
+    base_uri: str = "timeseries"
+    max_processing_time: int = 15000  # in milliseconds
+    default_max_cells:int = 500000  # max number of cells to extract from data cubes
     store: Store
-    sentry_dsn = "https://9b9dc2f60562380edeb675c39fe1c896@sentry.comses.net/4"
+    sentry_dsn: str = "https://9b9dc2f60562380edeb675c39fe1c896@sentry.comses.net/4"
+    tile_server_url: str
+    storage_base_url: str
+
+    model_config = SettingsConfigDict(yaml_file="config/app_settings.yml")
 
     @classmethod
     def create(cls):
@@ -47,15 +52,9 @@ class Settings(BaseSettings):
         return "config/logging.yml"
 
     @property
-    def metadata_path(self):
-        """
-        FIXME: dataset metadata is currently duplicated across
-        deploy/metadata/prod.yml and metadata.yml and should
-        be de-duplicated but this brings some pain into how
-        the pydantic base classes for Dataset
-        were constructed
-        """
-        return Path(f"deploy/metadata/{self.environment}.yml")
+    def registry_path(self):
+        # return Path(f"deploy/metadata/{self.environment}.yml")
+        return Path("metadata.yml")
 
     def _get_path(self, template, dataset_id, variable_id):
         base = Path(self.store.base_path).resolve()
@@ -83,16 +82,21 @@ class Settings(BaseSettings):
             variable_id=variable_id,
         )
 
-    class Config:
-        @classmethod
-        def customise_sources(cls, init_settings, env_settings, file_secret_settings):
-            return (
-                init_settings,
-                yaml_config_settings_source,
-                env_settings,
-                file_secret_settings,
-            )
-
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: Type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> Tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            YamlConfigSettingsSource(settings_cls),
+            env_settings,
+            file_secret_settings,
+        )
 
 @lru_cache()
 def get_settings():
