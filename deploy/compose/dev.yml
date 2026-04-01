@@ -8,5 +8,9 @@ services:
       - ./timeseries/app:/code/app
       - ./timeseries/metadata.yml:/code/metadata.yml
       - ../bnd_data.nosync:/data
+      - ./deploy/settings/dev.yml:/code/config/app_settings.yml
     ports:
     - "127.0.0.1:8001:8000"
+  titiler:
+    volumes:
+      - ../bnd_data.nosync:/data
