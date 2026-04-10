@@ -240,8 +240,8 @@ async def execute_timeseries_job(
     )
     base_series_payload = {
         "timesteps": timestep_list,
-        "mean":      full_mean.tolist(),
-        "median":    full_median.tolist(),
+        "mean":      [None if np.isnan(v) else float(v) for v in full_mean],
+        "median":    [None if np.isnan(v) else float(v) for v in full_median],
     }
     return timeseries_response, base_series_payload
 
