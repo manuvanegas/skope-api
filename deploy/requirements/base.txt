@@ -28,3 +28,6 @@ PyYAML==6.0.3
 
 # Observability
 sentry-sdk==2.55.0
+
+# Job store
+redis>=5.0

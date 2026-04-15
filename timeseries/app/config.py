@@ -1,7 +1,7 @@
 from functools import lru_cache
 from logging.config import dictConfig
 from pathlib import Path
-from typing import List, Tuple, Type
+from typing import List, Optional, Tuple, Type
 from pydantic import BaseModel
 from pydantic_settings import (
     BaseSettings,
@@ -28,8 +28,9 @@ class Settings(BaseSettings):
     name: str = "SKOPE API Services (development)"
     base_uri: str = "timeseries"
     max_processing_time: int = 15000  # in milliseconds
-    default_max_cells:int = 500000  # max number of cells to extract from data cubes
+    default_max_cells:int = 1000000  # max number of cells to extract from data cubes
     store: Store
+    redis_url: Optional[str] = None
     sentry_dsn: str = "https://9b9dc2f60562380edeb675c39fe1c896@sentry.comses.net/4"
     tile_server_url: str
     storage_base_url: str
