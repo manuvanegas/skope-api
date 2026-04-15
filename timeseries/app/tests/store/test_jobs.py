@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from app.store.jobs import cleanup_stale_jobs
+from app.store.jobs import cleanup_stale_jobs, _JOB_TTL_SECONDS
 
 
 # ---------------------------------------------------------------------------
@@ -72,3 +72,60 @@ def test_cleanup_keeps_recent_files(tmp_path, monkeypatch):
     cleanup_stale_jobs(max_age_hours=24)
 
     assert recent_file.exists()
+
+
+# ---------------------------------------------------------------------------
+# RedisJobStore
+
+def test_redis_update_job_stores_value(redis_job_store):
+    redis_job_store.update_job("job-001", {"status": "PENDING"})
+    raw = redis_job_store._client.get("job:job-001")
+    assert json.loads(raw) == {"status": "PENDING"}
+
+
+def test_redis_update_job_overwrites(redis_job_store):
+    redis_job_store.update_job("job-002", {"status": "PENDING"})
+    redis_job_store.update_job("job-002", {"status": "SUCCESS", "result": {}})
+    result = redis_job_store.get_job_status("job-002")
+    assert result == {"status": "SUCCESS", "result": {}}
+
+
+def test_redis_get_job_status_existing(redis_job_store):
+    payload = {"status": "PROCESSING"}
+    redis_job_store.update_job("job-003", payload)
+    assert redis_job_store.get_job_status("job-003") == payload
+
+
+def test_redis_get_job_status_missing_returns_none(redis_job_store):
+    assert redis_job_store.get_job_status("nonexistent-id") is None
+
+
+def test_redis_update_job_sets_ttl(redis_job_store):
+    redis_job_store.update_job("job-004", {"status": "PENDING"})
+    ttl = redis_job_store._client.ttl("job:job-004")
+    # TTL should be set and within expected range (allow 1s of drift)
+    assert 0 < ttl <= _JOB_TTL_SECONDS
+
+
+def test_redis_update_job_resets_ttl_on_overwrite(redis_job_store):
+    redis_job_store.update_job("job-005", {"status": "PENDING"})
+    redis_job_store.update_job("job-005", {"status": "SUCCESS"})
+    ttl = redis_job_store._client.ttl("job:job-005")
+    assert 0 < ttl <= _JOB_TTL_SECONDS
+
+
+def test_redis_key_namespacing(redis_job_store):
+    redis_job_store.update_job("job-006", {"status": "PENDING"})
+    # Key must use the 'job:' prefix — bare id should not exist
+    assert redis_job_store._client.get("job-006") is None
+    assert redis_job_store._client.get("job:job-006") is not None
+
+
+def test_redis_full_success_payload(redis_job_store):
+    payload = {
+        "status": "SUCCESS",
+        "result": {"values": [1.0, 2.0, 3.0], "nodata_count": 0},
+        "base_series": {"timesteps": ["0100", "0101", "0102"]},
+    }
+    redis_job_store.update_job("job-007", payload)
+    assert redis_job_store.get_job_status("job-007") == payload

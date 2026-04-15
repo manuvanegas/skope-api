@@ -26,7 +26,7 @@ def _find_config_root() -> Path:
 os.chdir(_find_config_root())
 
 from app.store.data_reader import DataReader
-from app.store.jobs import FileSystemJobStore
+from app.store.jobs import FileSystemJobStore, RedisJobStore
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +110,13 @@ def tmp_jobs_dir(tmp_path):
 @pytest.fixture
 def fs_job_store(tmp_jobs_dir):
     return FileSystemJobStore(directory=tmp_jobs_dir)
+
+
+@pytest.fixture
+def redis_job_store():
+    store = RedisJobStore(os.environ.get("REDIS_URL", "redis://redis:6379"))
+    yield store
+    store._client.flushdb()
 
 
 # ---------------------------------------------------------------------------
