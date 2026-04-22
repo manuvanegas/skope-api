@@ -7,8 +7,9 @@ from rasterio.windows import Window
 import rasterio.windows
 from rasterio.features import geometry_mask
 from rasterio import Affine
-from pyproj import Transformer
+from pyproj import CRS, Transformer
 from shapely.geometry import GeometryCollection
+from shapely.ops import unary_union
 from typing import Dict, List, Iterator, Tuple, Sequence
 
 # Local imports
@@ -55,9 +56,10 @@ def generate_band_chunks(band_indices: Sequence[int], chunk_size: int) -> Iterat
         yield band_indices[i : i + chunk_size]
 
 def calculate_spatial_coverage(
-    shapes: list, 
-    dataset_transform: rasterio.Affine, 
-    window: Window
+    shapes: list,
+    dataset_transform: rasterio.Affine,
+    window: Window,
+    dataset_crs: str,
 ) -> Tuple[np.ndarray, int, float]:
     window_transform = rasterio.windows.transform(window, dataset_transform)
     mask = geometry_mask(shapes, transform=window_transform, invert=True, out_shape=(window.height, window.width))
@@ -65,8 +67,15 @@ def calculate_spatial_coverage(
         # Fallback for point geometries or small, sub-pixel polygons that don't cover any pixel center
         mask = geometry_mask(shapes, transform=window_transform, invert=True, out_shape=(window.height, window.width), all_touched=True)
     n_cells = int(np.sum(mask))
-    pixel_area = abs(dataset_transform.a * dataset_transform.e)
-    total_area = float(n_cells * pixel_area)
+
+    crs = CRS.from_string(dataset_crs)
+    union = unary_union(shapes)
+    if crs.is_geographic:
+        area, _ = crs.get_geod().geometry_area_perimeter(union)
+        total_area = abs(area)
+    else:
+        total_area = float(union.area)
+
     return mask, n_cells, total_area
 
 def extract_summarystat_timeseries(
@@ -163,7 +172,7 @@ async def execute_timeseries_job(
     window = rasterio.windows.from_bounds(*total_bounds, transform=dataset_transform).round_lengths().round_offsets()
     window = Window(window.col_off, window.row_off, max(1, window.width), max(1, window.height))
 
-    mask, n_cells, total_area = calculate_spatial_coverage(reprojected_shapes, dataset_transform, window)
+    mask, n_cells, total_area = calculate_spatial_coverage(reprojected_shapes, dataset_transform, window, dataset_crs)
     chunk_size = calculate_safe_chunk_size(width=int(window.width), height=int(window.height))
     logger.info(f"RAM Governor set chunk size to {chunk_size}. Area: {total_area} sqm. Cells: {n_cells}")
 

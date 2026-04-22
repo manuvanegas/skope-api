@@ -4,6 +4,7 @@ from typing import Sequence
 from shapely.ops import unary_union
 from shapely.geometry import Point as ShapelyPoint
 from shapely.geometry.base import BaseGeometry
+from pyproj import CRS
 
 # ---------------------------------------------------------------------------
 # Dataset and variable validation to prevent arbitrary or malicious queries
@@ -26,33 +27,13 @@ def validate_dataset_and_variable(registry: dict, dataset_id: str, variable_id: 
 # ---------------------------------------------------------------------------
 # Geometry size validation to prevent excessively large queries
 
-COMMON_GEOGRAPHIC_EPSG = {
-    4326, 4322, 4269, 4267, 4258, 4277, 4674, 
-    4618, 4283, 4490, 4284, 4166, 4135, 4250, 4261
-}
-
-def is_geographic(epsg_code: str, transform: list) -> bool:
-    # Heuristic: Is it degrees?
-    # 1. Is the EPSG known to be geographic?
-    if epsg_code in COMMON_GEOGRAPHIC_EPSG:
-        return True
-        
-    # 2. Fallback to the origin & pixel-size heuristic
-    pixel_w = abs(transform[0])
-    origin_x = abs(transform[2])
-    origin_y = abs(transform[5])
-    
-    return (origin_x <= 180 and origin_y <= 90 and pixel_w < 0.1)
-
-def estimate_cell_count(geom_bounds: Sequence[float], transform: Sequence[float], epsg_code: str) -> int:
+def estimate_cell_count(geom_bounds: Sequence[float], transform: Sequence[float], epsg_str: str) -> int:
     """
     Estimates the number of cells that would be processed for a given geometry and dataset resolution.
     """    
     minx, miny, maxx, maxy = geom_bounds
 
-    is_geo = is_geographic(epsg_code, transform)
-
-    if is_geo:
+    if CRS.from_string(epsg_str).is_geographic():
         width_units = maxx - minx
         height_units = maxy - miny
     else:
@@ -82,8 +63,7 @@ def validate_geom_size(shapes: list[BaseGeometry], dataset_entry: dict, max_cell
         return  # A point is exactly 1 cell — always within limits
     geom_bounds = unary_union(shapes).bounds
     transform = dataset_entry["transform"]
-    epsg_code = int(dataset_entry["crs"].replace("EPSG:", ""))
-    estimated_cells = estimate_cell_count(geom_bounds, transform, epsg_code)
+    estimated_cells = estimate_cell_count(geom_bounds, transform, dataset_entry["crs"])
 
     if estimated_cells > max_cells:
         raise ValueError(f"Selected area is too large. Estimated cell count: {estimated_cells}, maximum allowed: {max_cells}.")
