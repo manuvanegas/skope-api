@@ -138,4 +138,5 @@ async def get_job_status(
     job = store.get_job_status(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    job.pop("base_series", None)
     return job
