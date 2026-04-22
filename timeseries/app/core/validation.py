@@ -2,6 +2,7 @@ import math
 from typing import Sequence
 
 from shapely.ops import unary_union
+from shapely.geometry import Point as ShapelyPoint
 from shapely.geometry.base import BaseGeometry
 
 # ---------------------------------------------------------------------------
@@ -77,6 +78,8 @@ def validate_geom_size(shapes: list[BaseGeometry], dataset_entry: dict, max_cell
     Accepts a list of Shapely geometries and a registry dataset entry (with 'crs' and 'transform').
     Raises ValueError if the geometry is too large.
     """
+    if all(isinstance(s, ShapelyPoint) for s in shapes):
+        return  # A point is exactly 1 cell — always within limits
     geom_bounds = unary_union(shapes).bounds
     transform = dataset_entry["transform"]
     epsg_code = int(dataset_entry["crs"].replace("EPSG:", ""))

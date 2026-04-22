@@ -60,12 +60,10 @@ def calculate_spatial_coverage(
     window: Window
 ) -> Tuple[np.ndarray, int, float]:
     window_transform = rasterio.windows.transform(window, dataset_transform)
-    mask = geometry_mask(
-        shapes, 
-        transform=window_transform, 
-        invert=True, 
-        out_shape=(window.height, window.width)
-    )
+    mask = geometry_mask(shapes, transform=window_transform, invert=True, out_shape=(window.height, window.width))
+    if np.sum(mask) == 0:
+        # Fallback for point geometries or small, sub-pixel polygons that don't cover any pixel center
+        mask = geometry_mask(shapes, transform=window_transform, invert=True, out_shape=(window.height, window.width), all_touched=True)
     n_cells = int(np.sum(mask))
     pixel_area = abs(dataset_transform.a * dataset_transform.e)
     total_area = float(n_cells * pixel_area)
@@ -163,6 +161,7 @@ async def execute_timeseries_job(
     
     total_bounds = GeometryCollection(reprojected_shapes).bounds
     window = rasterio.windows.from_bounds(*total_bounds, transform=dataset_transform).round_lengths().round_offsets()
+    window = Window(window.col_off, window.row_off, max(1, window.width), max(1, window.height))
 
     mask, n_cells, total_area = calculate_spatial_coverage(reprojected_shapes, dataset_transform, window)
     chunk_size = calculate_safe_chunk_size(width=int(window.width), height=int(window.height))
