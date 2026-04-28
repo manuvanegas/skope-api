@@ -33,7 +33,7 @@ def estimate_cell_count(geom_bounds: Sequence[float], transform: Sequence[float]
     """    
     minx, miny, maxx, maxy = geom_bounds
 
-    if CRS.from_string(epsg_str).is_geographic():
+    if CRS.from_string(epsg_str).is_geographic:
         width_units = maxx - minx
         height_units = maxy - miny
     else:

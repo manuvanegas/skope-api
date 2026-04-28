@@ -57,6 +57,10 @@ class Settings(BaseSettings):
         # return Path(f"deploy/metadata/{self.environment}.yml")
         return Path("metadata.yml")
 
+    @property
+    def colormaps_path(self):
+        return Path("config/colormaps.json")
+
     def _get_path(self, template, dataset_id, variable_id):
         base = Path(self.store.base_path).resolve()
         path = Path(

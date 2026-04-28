@@ -12,7 +12,7 @@ from app.config import get_settings
 from app.exceptions import TimeseriesValidationError, TimeseriesTimeoutError
 from app.store.jobs import cleanup_stale_jobs
 from app.store.data_reader import get_data_reader
-from app.store.index_loaders import load_registry
+from app.store.index_loaders import load_registry, resolve_colormaps
 from app.routers.v3 import api as v3_api
 
 settings = get_settings()
@@ -23,13 +23,20 @@ async def lifespan(app: FastAPI):
     cleanup_stale_jobs()
     logger.info("Stale jobs cleaned up.")
 
-    app.state.global_registry = load_registry(settings.registry_path)
-    app.state.data_reader = get_data_reader(settings.storage_base_url)
-
     # The limits ensure we don't overwhelm Titiler while handling concurrency
     limits = httpx.Limits(max_keepalive_connections=20, max_connections=100)
     async_client = httpx.AsyncClient(timeout=httpx.Timeout(10.0, read=60.0), limits=limits)
     app.state.client = async_client
+
+    app.state.global_registry = load_registry(settings.registry_path)
+    app.state.data_reader = get_data_reader(settings.storage_base_url)
+
+    await resolve_colormaps(
+        app.state.global_registry,
+        settings.colormaps_path,
+        async_client,
+        settings.tile_server_url,
+    )
     
     yield 
     

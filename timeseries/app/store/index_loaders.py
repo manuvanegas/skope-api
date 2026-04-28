@@ -1,9 +1,12 @@
-import yaml 
+import asyncio
+import yaml
 import os
 import json
 import logging
 import re
 from pathlib import Path
+
+import httpx
 
 from app.store.data_reader import DataReader
 
@@ -45,6 +48,82 @@ def load_registry(filepath: Path) -> dict:
 
     logger.info(f"Successfully loaded Global Registry from {filepath}.")
     return registry_dict
+
+
+# ------------------------------------------------------------------
+# Colormaps
+
+async def resolve_colormaps(
+    registry_dict: dict,
+    colormaps_path: Path,
+    client: httpx.AsyncClient,
+    tile_server_url: str,
+) -> None:
+    """Resolves colormap stops for all colormaps referenced in registry variables.
+
+    Custom colormaps are read from colormaps_path. Unknown names are fetched from
+    TiTiler's /colorMaps/{name} endpoint. Stops are injected into each variable dict
+    in-place. Raises at startup if any colormap name cannot be resolved.
+    """
+    if colormaps_path.exists():
+        colormaps: dict[str, list[str]] = json.loads(colormaps_path.read_text())
+    else:
+        logger.warning(
+            f"Custom colormaps file not found at {colormaps_path.resolve()}. "
+            "All colormap names will be fetched from TiTiler."
+        )
+        colormaps = {}
+
+    names_needed = {
+        var.get("colormap")
+        for ds in registry_dict.values()
+        for var in ds.get("variables", [])
+        if var.get("colormap")
+    }
+
+    names_from_titiler = names_needed - set(colormaps.keys())
+    for name in names_from_titiler:
+        colormaps[name] = await _fetch_colormap_from_titiler(client, tile_server_url, name)
+
+    for ds in registry_dict.values():
+        for var in ds.get("variables", []):
+            cm = var.get("colormap")
+            if cm and cm not in colormaps:
+                raise ValueError(
+                    f"Colormap '{cm}' (used by variable '{var.get('id')}') "
+                    f"is not in {colormaps_path.resolve()} and was not found in TiTiler."
+                )
+            if cm:
+                var["colormap_stops"] = colormaps[cm]
+
+    logger.info(
+        f"Resolved {len(names_needed)} colormap(s) {sorted(names_needed)}: "
+        f"{len(names_needed) - len(names_from_titiler)} from {colormaps_path.name}, "
+        f"{len(names_from_titiler)} via TiTiler"
+    )
+
+
+async def _fetch_colormap_from_titiler(
+    client: httpx.AsyncClient, tile_server_url: str, name: str
+) -> list[str]:
+    """Fetches a named colormap from TiTiler with retry on connection errors."""
+    url = f"{tile_server_url}/colorMaps/{name}"
+    for attempt in range(1, 4):
+        try:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            rgba_dict: dict[str, list[int]] = resp.json()
+            return [
+                "#{:02x}{:02x}{:02x}".format(*rgba_dict[str(i)][:3])
+                for i in range(256)
+            ]
+        except httpx.ConnectError:
+            if attempt == 3:
+                raise
+            wait = 2 ** attempt  # 2 s, 4 s
+            logger.warning(f"TiTiler unreachable (attempt {attempt}/3), retrying in {wait}s…")
+            await asyncio.sleep(wait)
+    raise RuntimeError("unreachable")
 
 
 # ------------------------------------------------------------------

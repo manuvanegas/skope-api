@@ -17,6 +17,7 @@ RUN mkdir /shared && \
 
 COPY deploy/logging/${ENVIRONMENT}.yml /code/config/logging.yml
 COPY deploy/settings/${ENVIRONMENT}.yml /code/config/app_settings.yml
+COPY deploy/colormaps/custom.json /code/config/colormaps.json
 
 COPY timeseries/app /code/app
 COPY timeseries/metadata.yml /code/

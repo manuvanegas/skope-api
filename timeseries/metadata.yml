@@ -77,14 +77,14 @@
     > fax: 303-497-6513
   crs: 'EPSG:4269'
   transform:
-    - 0.008333333332949996,
-    - 0.0,
-    - -114.995833333457,
-    - 0.0,
-    - -0.008333333333010806,
-    - 42.9958333336016,
-    - 0.0,
-    - 0.0,
+    - 0.008333333332949996
+    - 0.0
+    - -114.995833333457
+    - 0.0
+    - -0.008333333333010806
+    - 42.9958333336016
+    - 0.0
+    - 0.0
     - 1.0
   variables:
     - id: pmdi
@@ -177,14 +177,14 @@
       suffix: CE
   crs: 'EPSG:4269'
   transform:
-    - 0.008333333332949996,
-    - 0.0,
-    - -114.995833333457,
-    - 0.0,
-    - -0.008333333333010806,
-    - 42.9958333336016,
-    - 0.0,
-    - 0.0,
+    - 0.008333333332949996
+    - 0.0
+    - -114.995833333457
+    - 0.0
+    - -0.008333333333010806
+    - 42.9958333336016
+    - 0.0
+    - 0.0
     - 1.0
   variables:
     - id: srtm_elevation
@@ -290,14 +290,14 @@
       suffix: CE
   crs: 'EPSG:4269'
   transform:
-    - 0.008333333332949996,
-    - 0.0,
-    - -114.995833333457,
-    - 0.0,
-    - -0.008333333333010806,
-    - 42.9958333336016,
-    - 0.0,
-    - 0.0,
+    - 0.008333333332949996
+    - 0.0
+    - -114.995833333457
+    - 0.0
+    - -0.008333333333010806
+    - 42.9958333336016
+    - 0.0
+    - 0.0
     - 1.0
   variables:
     - id: ppt_water_year
@@ -432,20 +432,21 @@
       suffix: CE
   crs: 'EPSG:4269'
   transform:
-    - 0.008333333332949996,
-    - 0.0,
-    - -114.995833333457,
-    - 0.0,
-    - -0.008333333333010806,
-    - 42.9958333336016,
-    - 0.0,
-    - 0.0,
+    - 0.008333333332949996
+    - 0.0
+    - -114.995833333457
+    - 0.0
+    - -0.008333333333010806
+    - 42.9958333336016
+    - 0.0
+    - 0.0
     - 1.0
   variables:
     - id: ppt_water_year
       class: Precipitation
       name: Water-year (Oct-Sept) Precipitation
       units: mm
+      colormap: skope-precip
       timeseriesServiceUri: paleocar_v3/ppt_water_year
       wmsLayer: 'SKOPE:paleocar_v3_ppt_water_year_${year}'
       min: 0
@@ -456,6 +457,7 @@
     - id: ppt_may_sept
       class: Precipitation
       name: Summer (May-Sept) Precipitation
+      colormap: skope-precip
       units: mm
       timeseriesServiceUri: paleocar_v3/ppt_may_sept
       wmsLayer: 'SKOPE:paleocar_v3_ppt_may_sept_${year}'
@@ -467,6 +469,7 @@
     - id: ppt_annual
       class: Precipitation
       name: Annual (Jan–Dec) Precipitation
+      colormap: skope-precip
       units: mm
       timeseriesServiceUri: paleocar_v3/ppt_annual
       wmsLayer: 'SKOPE:paleocar_v3_ppt_annual_${year}'
@@ -479,6 +482,7 @@
       class: Temperature
       name: Summer (May-Sept) Growing Degree Days
       units: °F GDD
+      colormap: skope-precip
       timeseriesServiceUri: paleocar_v3/gdd_may_sept
       wmsLayer: 'SKOPE:paleocar_v3_gdd_may_sept_${year}'
       min: 0

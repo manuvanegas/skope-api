@@ -40,7 +40,7 @@ async def stream_tile(
         "url": target_file,
         "bidx": target_band,
         "colormap_name": colormap,
-        "rescale": rescale
+        "rescale": rescale,
     }
 
     try:
@@ -55,7 +55,7 @@ async def stream_tile(
         )
         
     except httpx.HTTPStatusError as e:
-        logger.error(f"Tile Server returned an error: {e.response.status_code} - {e.response.text}")
+        logger.error(f"Tile Server returned an error: {e.response.status_code}")
         raise HTTPException(status_code=502, detail="Upstream tile server error.")
     except httpx.RequestError as e:
         logger.error(f"Failed to connect to Tile Server: {e}")
