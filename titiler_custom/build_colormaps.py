@@ -15,7 +15,9 @@ def _hex_to_rgb(h: str) -> tuple:
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
-def _stops_to_array(stops: list) -> np.ndarray:
+def _stops_to_array(stops: list, name: str = "") -> np.ndarray:
+    if len(stops) < 2:
+        raise ValueError(f"Colormap {name!r} must have at least 2 color stops, got {len(stops)}.")
     n = len(stops)
     positions = [i / (n - 1) for i in range(n)]
     result = np.zeros((256, 4), dtype=np.uint8)
@@ -47,5 +49,5 @@ with open(source) as f:
 
 for name, stops in colormaps.items():
     dest = cmap_dir / f"{name}.npy"
-    np.save(str(dest), _stops_to_array(stops))
+    np.save(str(dest), _stops_to_array(stops, name))
 sys.exit(0)

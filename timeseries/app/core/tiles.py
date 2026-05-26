@@ -48,8 +48,15 @@ async def stream_tile(
         response = await app_state.client.send(request, stream=True)
         response.raise_for_status()
 
+        async def iter_tile_bytes():
+            try:
+                async for chunk in response.aiter_bytes():
+                    yield chunk
+            finally:
+                await response.aclose()
+
         return StreamingResponse(
-            response.aiter_bytes(),
+            iter_tile_bytes(),
             media_type=response.headers.get("Content-Type", "image/png"),
             status_code=response.status_code
         )

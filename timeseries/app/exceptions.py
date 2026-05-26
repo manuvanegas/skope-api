@@ -17,7 +17,7 @@ class TimeseriesValidationError(Exception):
         "loc": ("body", self.field),
         "msg": str(self),
         "input": None,
-        "ctx": {"error": self},
+        "ctx": {"error": str(self)},
     }])
 
 

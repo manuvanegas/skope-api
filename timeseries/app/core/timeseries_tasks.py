@@ -33,11 +33,19 @@ async def run_timeseries_pipeline_task(
             data_reader=data_reader,
         )
         
+        time_range = payload.time_range
+        if time_range is None:
+            gte = dataset_metadata["timespan"]["period"]["gte"]
+            lte = dataset_metadata["timespan"]["period"]["lte"]
+        else:
+            gte = time_range.gte
+            lte = time_range.lte
+
         file_mapping, timestep_list = resolve_temporal_slice(
             lookup_data=lookup_data,
             variable_id=payload.variable_id,
-            start_step=payload.time_range.gte,
-            end_step=payload.time_range.lte,
+            start_step=gte,
+            end_step=lte,
             base_url=settings.storage_base_url
         )
         

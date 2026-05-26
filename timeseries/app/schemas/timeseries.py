@@ -1,4 +1,3 @@
-import re
 from enum import Enum
 from typing import List, Literal, Optional, Self, Union, Annotated
 from geojson_pydantic import Point, Polygon
@@ -15,7 +14,8 @@ from .geometry import (
 settings = get_settings()
 
 # Strict ISO-8601 zero-padded pattern (YYYY-MM-DDTHH:MM:SSZ)
-ISO_TIME_PATTERN = re.compile(r"^\d{4}(?:-\d{2}(?:-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})?)?)?)?$")
+
+ISO_TIME_PATTERN = "^\d{4}(?:-\d{2}(?:-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})?)?)?)?$"
 
 
 class ZonalStatistic(str, Enum):
@@ -87,7 +87,7 @@ class ZScoreMovingInterval(BaseModel):
     width: int = Field(
         ...,
         description="Number of prior time steps to use in the moving window",
-        ge=0,
+        ge=1,
         le=200,
     )
     model_config = ConfigDict(json_schema_extra={"example": {"type": "ZScoreMovingInterval", "width": 5}})
