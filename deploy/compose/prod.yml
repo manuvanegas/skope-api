@@ -19,7 +19,6 @@ services:
       FORWARDED_ALLOW_IPS: '*'
     image: openskope/skope-api:latest
     volumes:
-      - ./timeseries:/code
       - /projects/skope/datasets:/data
     ports:
     - "0.0.0.0:8001:8000"
