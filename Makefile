@@ -5,7 +5,7 @@ DOCKER_SHARE_MOUNT=img_logs
 # Set the default ENVIRONMENT to dev if it hasn't been set by config.mk or the CLI
 ENVIRONMENT ?= dev
 
-.PHONY: help init build deploy
+.PHONY: help init build deploy ingest
 
 # Make 'help' the default target if someone just types `make`
 .DEFAULT_GOAL := help
@@ -36,6 +36,10 @@ build: deploy/compose/base.yml deploy/compose/$(ENVIRONMENT).yml deploy/Dockerfi
 deploy: build   ##- build and deploy the web app 
 	mkdir -p $(DOCKER_SHARE_MOUNT)
 	docker compose up -d
+
+ingest: ##- Build and run the COG/STAC ingest pipeline container
+	docker compose --profile ingest build ingest
+	docker compose --profile ingest run --rm ingest
 
 ##
 ## Testing
