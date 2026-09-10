@@ -20,7 +20,7 @@ help:   ##- Instructions for using this Makefile.
 config.mk:
 	@echo "Generating default config.mk..."
 	@echo "ENVIRONMENT=dev" > config.mk
-	@echo "# Change to 'prod' for production deployment" >> config.mk
+	@echo "# Change to 'staging' or 'prod' for remote deployment" >> config.mk
 
 init: config.mk ##- Initialize the local workspace with default configuration files
 	@echo "Initialized config.mk. You can edit it now, or just run 'make deploy'."
@@ -28,8 +28,8 @@ init: config.mk ##- Initialize the local workspace with default configuration fi
 build: deploy/compose/base.yml deploy/compose/$(ENVIRONMENT).yml deploy/Dockerfile
 	@echo "Building for ENVIRONMENT: $(ENVIRONMENT)"
 	case "$(ENVIRONMENT)" in \
-	  dev|prod) docker compose -f deploy/compose/base.yml -f "deploy/compose/$(ENVIRONMENT).yml" --project-directory . config > docker-compose.yml;; \
-	  *) echo "invalid environment. must be dev or prod" 1>&2; exit 1;; \
+	  dev|staging|prod) docker compose -f deploy/compose/base.yml -f "deploy/compose/$(ENVIRONMENT).yml" --project-directory . config > docker-compose.yml;; \
+	  *) echo "invalid environment. must be dev, staging, or prod" 1>&2; exit 1;; \
 	esac
 	docker compose build --pull
 
