@@ -11,8 +11,7 @@ RUN pip install --no-cache-dir --upgrade pip
 
 COPY deploy/requirements /code/requirements
 
-RUN mkdir /shared && \
-    pip install --no-cache-dir \
+RUN pip install --no-cache-dir \
     -r requirements/base.txt -r requirements/${ENVIRONMENT}.txt
 
 COPY deploy/metadata/${ENVIRONMENT}.yml /code/metadata.yml

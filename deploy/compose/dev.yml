@@ -3,15 +3,15 @@ services:
     build:
       args:
         ENVIRONMENT: dev
-    image: openskope/skope-api:latest
+    image: openskope/skope-api:dev
     volumes:
       - ./timeseries/app:/code/app
-      - ./timeseries/metadata.yml:/code/metadata.yml
-      - ./cog-input:/data
-      - ./deploy/settings/dev.yml:/code/config/app_settings.yml
-      - ./deploy/colormaps/custom.json:/code/config/colormaps.json
+      - ./timeseries/metadata.yml:/code/metadata.yml:ro
+      - ./cog-input:/data:ro
+      - ./deploy/settings/dev.yml:/code/config/app_settings.yml:ro
+      - ./deploy/colormaps/custom.json:/code/config/colormaps.json:ro
     ports:
-    - "127.0.0.1:8001:8000"
+      - "127.0.0.1:8001:8000"
   titiler:
     volumes:
-      - ./cog-input:/data
+      - ./cog-input:/data:ro

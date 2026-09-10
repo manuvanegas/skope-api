@@ -17,8 +17,11 @@ services:
       - "app.main:app"
     environment:
       FORWARDED_ALLOW_IPS: '*'
-    image: openskope/skope-api:latest
+    image: openskope/skope-api:prod
     volumes:
-      - /projects/skope/datasets:/data
+      - /srv/datasets:/data:ro
     ports:
-    - "0.0.0.0:8001:8000"
+      - "0.0.0.0:8001:8000"
+  titiler:
+    volumes:
+      - /srv/datasets:/data:ro

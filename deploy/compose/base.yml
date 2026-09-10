@@ -4,10 +4,19 @@ services:
       context: .
       dockerfile: deploy/Dockerfile
     restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+      titiler:
+        condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
-    volumes:
-      - ./img_logs:/shared
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 2).close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
     networks:
       - internal_geospatial_net # Internal network to see Titiler
       - default # External access to reach S3 and serve the frontend
@@ -15,6 +24,11 @@ services:
     image: redis:7-alpine
     command: redis-server --save "" --appendonly no
     restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - internal_geospatial_net
 
@@ -22,11 +36,18 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.titiler
+    image: openskope/skope-api-titiler:latest
     restart: always
     environment:
       CPL_VSIL_CURL_ALLOWED_EXTENSIONS: .tif,.ovr
       GDAL_DISABLE_READDIR_ON_OPEN: EMPTY_DIR
       AWS_NO_SIGN_REQUEST: YES
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 80), 2).close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
     networks:
       # Titiler is ONLY on the internal network.
       - internal_geospatial_net

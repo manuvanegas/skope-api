@@ -18,6 +18,8 @@ env/
 
 # Local Data and Logs
 img_logs/
+cog-input/
+timeseries/ingest/output/
 *.log
 
 # Tests 

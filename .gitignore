@@ -7,9 +7,10 @@ tags
 
 .idea
 # generated files
-config.mk
 docker-compose.yml
 timeseries/deploy/settings/config.yml
+cog-input/
+timeseries/ingest/output/
 
 
 ### Pulled from https://github.com/github/gitignore/blob/master/Python.gitignore

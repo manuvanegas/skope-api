@@ -70,7 +70,7 @@ def test_extract_annual_full_range_succeeds(pipeline_client):
     job = _get_status(pipeline_client, job_id)
 
     assert job["status"] == "SUCCESS"
-    assert len(job["base_series"]["timesteps"]) == 5
+    assert "base_series" not in job
     assert len(job["result"]["series"][0]["values"]) == 5
 
 
@@ -80,7 +80,7 @@ def test_extract_monthly_full_range_succeeds(pipeline_client):
     job = _get_status(pipeline_client, job_id)
 
     assert job["status"] == "SUCCESS"
-    assert len(job["base_series"]["timesteps"]) == 60
+    assert "base_series" not in job
     assert len(job["result"]["series"][0]["values"]) == 60
 
 
@@ -91,8 +91,10 @@ def test_extract_partial_range_returns_correct_slice(pipeline_client):
     job = _get_status(pipeline_client, job_id)
 
     assert job["status"] == "SUCCESS"
-    assert len(job["base_series"]["timesteps"]) == 3
-    assert job["base_series"]["timesteps"] == ["0002", "0003", "0004"]
+    assert "base_series" not in job
+    series = job["result"]["series"][0]
+    assert series["time_range"] == {"gte": "0002", "lte": "0004"}
+    assert len(series["values"]) == 3
 
 
 # ---------------------------------------------------------------------------
