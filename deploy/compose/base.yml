@@ -75,6 +75,14 @@ services:
       - ./cog-input:/data
       - ./timeseries/ingest/output:/output
 
+  ingest-test:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.ingest
+      target: test
+    profiles:
+      - test
+
 networks:
   internal_geospatial_net:
     driver: bridge

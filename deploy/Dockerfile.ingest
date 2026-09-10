@@ -1,4 +1,4 @@
-FROM ghcr.io/osgeo/gdal:ubuntu-small-3.12.0
+FROM ghcr.io/osgeo/gdal:ubuntu-small-3.12.0 AS runtime
 
 COPY --from=ghcr.io/astral-sh/uv:0.8.8 /uv /uvx /bin/
 
@@ -18,3 +18,12 @@ RUN uv export --format requirements.txt --no-dev --no-emit-project --locked --no
     uv pip install --system --break-system-packages --no-cache --no-deps .
 
 CMD ["cog-stac-pipeline"]
+
+FROM runtime AS test
+
+COPY timeseries/ingest/tests ./tests
+
+RUN uv export --format requirements.txt --only-group dev --no-emit-project --locked --no-hashes --output-file requirements-dev.lock && \
+    uv pip install --system --break-system-packages --no-cache -r requirements-dev.lock
+
+CMD ["pytest", "tests"]

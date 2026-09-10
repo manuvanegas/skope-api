@@ -10,7 +10,8 @@ TEST_COMPOSE = docker compose --project-name $(COMPOSE_PROJECT_NAME)-test \
 	-f deploy/compose/dev.yml
 
 .PHONY: help check-environment prepare config build deploy \
-	deploy-dev deploy-staging deploy-production down restart logs ps ingest test
+	deploy-dev deploy-staging deploy-production down restart logs ps ingest \
+	test test-api test-ingest
 
 # Make 'help' the default target if someone just types `make`
 .DEFAULT_GOAL := help
@@ -70,9 +71,18 @@ ingest: prepare ##- Build and run the local COG/STAC ingest pipeline container
 
 .PHONY: test
 
-test: override ENVIRONMENT=dev
-test: prepare ##- Build the development image and run the Python unit tests
+test: test-api test-ingest ##- Run all API and ingest tests
+
+test-api: override ENVIRONMENT=dev
+test-api: prepare ##- Build the development image and run the API tests
 	@$(TEST_COMPOSE) config --quiet
 	$(TEST_COMPOSE) build server titiler
 	@trap '$(TEST_COMPOSE) down --remove-orphans' EXIT INT TERM; \
 		$(TEST_COMPOSE) run --rm server pytest -c app/pytest.ini app/tests
+
+test-ingest: override ENVIRONMENT=dev
+test-ingest: prepare ##- Build and run the ingest tests
+	@$(TEST_COMPOSE) --profile test config --quiet
+	$(TEST_COMPOSE) --profile test build ingest-test
+	@trap '$(TEST_COMPOSE) --profile test down --remove-orphans' EXIT INT TERM; \
+		$(TEST_COMPOSE) --profile test run --rm --no-deps ingest-test
