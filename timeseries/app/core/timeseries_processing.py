@@ -6,14 +6,13 @@ import rasterio
 from rasterio.windows import Window
 import rasterio.windows
 from rasterio.features import geometry_mask
-from rasterio import Affine
-from pyproj import CRS, Transformer
-from shapely.geometry import GeometryCollection
+from pyproj import CRS
 from shapely.ops import unary_union
 from typing import Dict, List, Iterator, Tuple, Sequence
 
 # Local imports
 from app.config import get_settings
+from app.core.validation import resolve_spatial_window
 from app.exceptions import SelectedAreaPolygonIsTooLarge
 from app.schemas.timeseries import (
     TimeseriesAnalyzeRequest,
@@ -168,13 +167,11 @@ async def execute_timeseries_job(
         raise ValueError("No matching files found in the requested time range.")
 
     
-    dataset_transform = Affine(*dataset_transform_array[:6])
-    transformer = Transformer.from_crs("EPSG:4326", dataset_crs, always_xy=True)
-    reprojected_shapes = request.selected_area.get_reprojected_shapes(transformer)
-    
-    total_bounds = GeometryCollection(reprojected_shapes).bounds
-    window = rasterio.windows.from_bounds(*total_bounds, transform=dataset_transform).round_lengths().round_offsets()
-    window = Window(window.col_off, window.row_off, max(1, window.width), max(1, window.height))
+    reprojected_shapes, dataset_transform, window = resolve_spatial_window(
+        request.selected_area.shapes,
+        dataset_transform_array,
+        dataset_crs,
+    )
 
     mask, n_cells, total_area = calculate_spatial_coverage(reprojected_shapes, dataset_transform, window, dataset_crs)
     chunk_size = calculate_safe_chunk_size(width=int(window.width), height=int(window.height))

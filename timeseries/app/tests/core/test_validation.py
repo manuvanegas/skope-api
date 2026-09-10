@@ -54,32 +54,27 @@ def test_validate_tile_style_rejects_invalid_values(colormap, rescale):
 
 def test_estimate_cell_count_geographic():
     # 1° × 1° box, 0.00833° pixels, EPSG:4326
-    bounds = (-110.0, 37.0, -109.0, 38.0)
+    shapes = [box(-110.0, 37.0, -109.0, 38.0)]
     transform = [0.00833, 0.0, -115.0, 0.0, -0.00833, 43.0]
-    result = estimate_cell_count(bounds, transform, "EPSG:4326")
-    expected = math.ceil(1.0 / 0.00833) * math.ceil(1.0 / 0.00833)
-    assert result == expected
+    result = estimate_cell_count(shapes, transform, "EPSG:4326")
+    assert result == 120 * 120
 
 
-def test_estimate_cell_count_projected_converts_degrees_to_meters():
-    # 1° × 1° in degrees, projected raster with 800m pixels, mid-lat ~37.5°
-    bounds = (-110.0, 37.0, -109.0, 38.0)
+def test_estimate_cell_count_projected_uses_exact_crs_transform():
+    shapes = [box(-110.0, 37.0, -109.0, 38.0)]
     transform = [800.0, 0.0, 200000.0, 0.0, -800.0, 4800000.0]
-    result = estimate_cell_count(bounds, transform, "EPSG:32612")
-    mid_lat = (37.0 + 38.0) / 2
-    m_per_deg_lon = 111320 * math.cos(math.radians(mid_lat))
-    width_m = 1.0 * m_per_deg_lon
-    height_m = 1.0 * 111320
-    expected = math.ceil(width_m / 800.0) * math.ceil(height_m / 800.0)
-    assert result == expected
+    result = estimate_cell_count(shapes, transform, "EPSG:32612")
+
+    # The precise UTM footprint differs from the former square
+    # meters-per-degree approximation.
+    assert result == 113 * 140
 
 
 def test_estimate_cell_count_zero_area():
-    # Degenerate point bbox — produces 0 cells, no exception
-    bounds = (0.0, 0.0, 0.0, 0.0)
+    shapes = [box(0.0, 0.0, 0.0, 0.0)]
     transform = [0.00833, 0.0, -115.0, 0.0, -0.00833, 43.0]
-    result = estimate_cell_count(bounds, transform, "EPSG:4326")
-    assert result == 0
+    result = estimate_cell_count(shapes, transform, "EPSG:4326")
+    assert result == 1
 
 
 # ---------------------------------------------------------------------------

@@ -2,10 +2,14 @@ import math
 import re
 from typing import Sequence
 
+import rasterio.windows
+from affine import Affine
+from pyproj import Transformer
+from rasterio.windows import Window
 from shapely.ops import unary_union
+from shapely.ops import transform as transform_geometry
 from shapely.geometry import Point as ShapelyPoint
 from shapely.geometry.base import BaseGeometry
-from pyproj import CRS
 
 COLORMAP_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -49,31 +53,38 @@ def validate_tile_style(colormap: str, rescale: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 # Geometry size validation to prevent excessively large queries
 
-def estimate_cell_count(geom_bounds: Sequence[float], transform: Sequence[float], epsg_str: str) -> int:
-    """
-    Estimates the number of cells that would be processed for a given geometry and dataset resolution.
-    """    
-    minx, miny, maxx, maxy = geom_bounds
+def resolve_spatial_window(
+    shapes: Sequence[BaseGeometry],
+    transform: Sequence[float],
+    dataset_crs: str,
+) -> tuple[list[BaseGeometry], Affine, Window]:
+    """Project WGS84 request shapes and return their exact raster read window."""
+    dataset_transform = Affine(*transform[:6])
+    transformer = Transformer.from_crs("EPSG:4326", dataset_crs, always_xy=True)
+    projected_shapes = [
+        transform_geometry(transformer.transform, shape) for shape in shapes
+    ]
+    bounds = unary_union(projected_shapes).bounds
+    window = (
+        rasterio.windows.from_bounds(*bounds, transform=dataset_transform)
+        .round_lengths()
+        .round_offsets()
+    )
+    window = Window(
+        window.col_off,
+        window.row_off,
+        max(1, window.width),
+        max(1, window.height),
+    )
+    return projected_shapes, dataset_transform, window
 
-    if CRS.from_string(epsg_str).is_geographic:
-        width_units = maxx - minx
-        height_units = maxy - miny
-    else:
-        # Raster in meters, Geometry in degrees
-        mid_lat = (miny + maxy) / 2
-        m_per_deg_lat = 111320
-        m_per_deg_lon = 111320 * math.cos(math.radians(mid_lat))
-        
-        width_units = (maxx - minx) * m_per_deg_lon
-        height_units = (maxy - miny) * m_per_deg_lat
-    
-    pixel_w = abs(transform[0])
-    pixel_h = abs(transform[4])
 
-    cols = math.ceil(width_units / pixel_w)
-    rows = math.ceil(height_units / pixel_h)
-    
-    return cols * rows
+def estimate_cell_count(
+    shapes: Sequence[BaseGeometry], transform: Sequence[float], dataset_crs: str
+) -> int:
+    """Return the bounding raster-window size used by extraction."""
+    _, _, window = resolve_spatial_window(shapes, transform, dataset_crs)
+    return math.ceil(window.width) * math.ceil(window.height)
 
 def validate_geom_size(shapes: list[BaseGeometry], dataset_entry: dict, max_cells: int) -> None:
     """
@@ -83,9 +94,8 @@ def validate_geom_size(shapes: list[BaseGeometry], dataset_entry: dict, max_cell
     """
     if all(isinstance(s, ShapelyPoint) for s in shapes):
         return  # A point is exactly 1 cell — always within limits
-    geom_bounds = unary_union(shapes).bounds
     transform = dataset_entry["transform"]
-    estimated_cells = estimate_cell_count(geom_bounds, transform, dataset_entry["crs"])
+    estimated_cells = estimate_cell_count(shapes, transform, dataset_entry["crs"])
 
     if estimated_cells > max_cells:
         raise ValueError(f"Selected area is too large. Estimated cell count: {estimated_cells}, maximum allowed: {max_cells}.")
