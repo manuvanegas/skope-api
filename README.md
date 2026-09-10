@@ -34,6 +34,18 @@ Run the tests
 make test
 ```
 
+### Extraction Job Durability
+
+Extraction requests run as background tasks in the API worker that accepts them.
+Redis retains job status, results, and internal analysis data for 24 hours, but it
+is not an execution queue: a worker restart does not resume an in-flight job.
+Clients should treat a missing job or a job that remains nonterminal across a
+deployment as abandoned and submit a new extraction request.
+
+This execution model is suitable for the current short, bounded extractions. A
+separate durable worker queue is required before offering restart-safe or
+resumable jobs.
+
 ## Staging and Production
 
 The application hosts are provisioned by `comses/infrastructure`. Both environments
