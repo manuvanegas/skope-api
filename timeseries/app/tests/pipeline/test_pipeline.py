@@ -92,6 +92,22 @@ def test_tile_uses_registry_colormap_when_override_is_absent_or_invalid(
     assert captured["colormap"] == "viridis"
 
 
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "query",
+    [
+        "?colormap=../viridis",
+        "?rescale=0",
+        "?rescale=nan,100",
+        "?rescale=100,0",
+    ],
+)
+def test_tile_rejects_invalid_style_parameters(pipeline_client, query):
+    response = pipeline_client.get(f"/tiles/test-annual/ppt/0001/0/0/0{query}")
+
+    assert response.status_code == 422
+
+
 # ---------------------------------------------------------------------------
 # Extract pipeline — happy path
 

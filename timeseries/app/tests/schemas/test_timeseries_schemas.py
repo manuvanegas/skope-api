@@ -117,3 +117,43 @@ def test_timeseries_request_dataset_id_script_injection_raises():
 def test_timeseries_request_variable_id_dot_raises():
     with pytest.raises(ValidationError):
         TimeseriesRequest(**_make_request_dict(variable_id="var.name"))
+
+
+def test_timeseries_request_requires_at_least_one_series():
+    with pytest.raises(ValidationError):
+        TimeseriesRequest(**_make_request_dict(requested_series_options=[]))
+
+
+def test_timeseries_request_limits_series_count():
+    options = [
+        {"name": f"series {index}", "smoother": {"type": "NoSmoother"}}
+        for index in range(11)
+    ]
+    with pytest.raises(ValidationError):
+        TimeseriesRequest(**_make_request_dict(requested_series_options=options))
+
+
+def test_timeseries_request_requires_unique_series_names():
+    options = [
+        {"name": "raw", "smoother": {"type": "NoSmoother"}},
+        {"name": "raw", "smoother": {"type": "NoSmoother"}},
+    ]
+    with pytest.raises(ValidationError, match="unique"):
+        TimeseriesRequest(**_make_request_dict(requested_series_options=options))
+
+
+def test_timeseries_request_limits_geometry_coordinates(monkeypatch):
+    monkeypatch.setattr("app.schemas.timeseries.settings.max_geometry_coordinates", 4)
+    polygon = {
+        "type": "Polygon",
+        "coordinates": [[
+            [-110.1, 37.9],
+            [-110.0, 37.9],
+            [-110.0, 38.0],
+            [-110.1, 38.0],
+            [-110.1, 37.9],
+        ]],
+    }
+
+    with pytest.raises(ValidationError, match="coordinates"):
+        TimeseriesRequest(**_make_request_dict(selected_area=polygon))

@@ -115,7 +115,7 @@ class SummaryStat(BaseModel):
     stdev: Optional[float]
 
 class SeriesOptions(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=64, pattern=r"^[\w -]+$")
     smoother: Smoother
     model_config = ConfigDict(
         json_schema_extra={
@@ -147,7 +147,21 @@ class TimeseriesResponse(BaseModel):
 # ---------------------------
 # Request Models
 
-class TimeseriesRequest(BaseModel):
+class SeriesOptionsRequest(BaseModel):
+    requested_series_options: List[SeriesOptions] = Field(
+        ..., min_length=1, max_length=settings.max_series_options
+    )
+
+    @field_validator("requested_series_options")
+    @classmethod
+    def series_names_must_be_unique(cls, value: List[SeriesOptions]):
+        names = [option.name for option in value]
+        if len(names) != len(set(names)):
+            raise ValueError("Series option names must be unique.")
+        return value
+
+
+class TimeseriesRequest(SeriesOptionsRequest):
     dataset_id: str = Field(..., pattern=r"^[\w-]+$", description="Dataset ID")
     variable_id: str = Field(..., pattern=r"^[\w-]+$", description="Variable ID")
     selected_area: Union[
@@ -158,15 +172,23 @@ class TimeseriesRequest(BaseModel):
     ]
     zonal_statistic: ZonalStatistic
     transform: Transform
-    requested_series_options: List[SeriesOptions]
     time_range: Optional[TimeRange]
     max_processing_time: int = Field(
         settings.max_processing_time, ge=0, le=settings.max_processing_time
     )
 
-class TimeseriesAnalyzeRequest(BaseModel):
+    @field_validator("selected_area")
+    @classmethod
+    def selected_area_must_be_bounded(cls, value):
+        value.validate_complexity(
+            max_shapes=settings.max_geometry_shapes,
+            max_coordinates=settings.max_geometry_coordinates,
+        )
+        return value
+
+
+class TimeseriesAnalyzeRequest(SeriesOptionsRequest):
     extraction_id: str = Field(..., description="Job ID from POST /v3/timeseries/extract")
     zonal_statistic: ZonalStatistic = ZonalStatistic.mean
     transform: Transform
-    requested_series_options: List[SeriesOptions]
     time_range: Optional[TimeRange] = None

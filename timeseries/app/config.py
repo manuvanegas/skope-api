@@ -29,7 +29,10 @@ class Settings(BaseSettings):
     base_uri: str = "timeseries"
     max_processing_time: int = 15000  # in milliseconds
     max_concurrent_jobs: int = Field(default=1, ge=1, le=32)
-    default_max_cells:int = 1000000  # max number of cells to extract from data cubes
+    default_max_cells: int = 1_000_000
+    max_series_options: int = Field(default=10, ge=1, le=100)
+    max_geometry_shapes: int = Field(default=100, ge=1, le=1_000)
+    max_geometry_coordinates: int = Field(default=10_000, ge=4, le=1_000_000)
     store: Store
     redis_url: Optional[str] = None
     sentry_dsn: str = "https://9b9dc2f60562380edeb675c39fe1c896@sentry.comses.net/4"

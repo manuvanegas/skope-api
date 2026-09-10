@@ -6,7 +6,11 @@ from fastapi.responses import StreamingResponse
 from app.config import get_settings
 from app.schemas.timeseries import TimeseriesAnalyzeRequest, TimeseriesRequest
 from app.store.jobs import JobStore, get_job_store
-from app.core.validation import validate_geom_size, validate_dataset_and_variable
+from app.core.validation import (
+    validate_dataset_and_variable,
+    validate_geom_size,
+    validate_tile_style,
+)
 from app.core.job_control import ExtractionJobController, get_job_controller
 from app.core.tiles import stream_tile
 from app.core.timeseries_tasks import run_timeseries_pipeline_task
@@ -34,8 +38,14 @@ async def get_map_tile(
     z: int = Path(...),
     x: int = Path(...),
     y: int = Path(...),
-    colormap: str | None = Query(None, description="Optional color palette override"),
-    rescale: str = Query("0,100", description="min,max data values to map to the colormap")
+    colormap: str | None = Query(
+        None, max_length=64, description="Optional color palette override"
+    ),
+    rescale: str = Query(
+        "0,100",
+        max_length=64,
+        description="min,max data values to map to the colormap",
+    ),
 ) -> StreamingResponse:
     """
     Lightweight endpoint to proxy XYZ tile requests to the internal streaming service.
@@ -59,6 +69,12 @@ async def get_map_tile(
         if requested_colormap.lower() in {"", "undefined", "null"}
         else requested_colormap
     )
+    try:
+        effective_colormap, rescale = validate_tile_style(
+            effective_colormap, rescale
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return await stream_tile(
         app_state=app_state,

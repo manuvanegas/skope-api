@@ -4,7 +4,7 @@ from typing import List
 
 from pydantic import ConfigDict
 from geojson_pydantic import Feature, FeatureCollection, Point, Polygon
-from shapely import geometry as geom
+from shapely import geometry as geom, get_num_coordinates
 from shapely.ops import transform
 from shapely.validation import explain_validity
 
@@ -29,6 +29,20 @@ class SkopeGeometry(metaclass=ABCMeta):
         Requires a pre-instantiated pyproj.Transformer (always_xy=True).
         """
         return [transform(pyproj_transformer.transform, shape) for shape in self.shapes]
+
+    def validate_complexity(self, max_shapes: int, max_coordinates: int) -> None:
+        shapes = self.shapes
+        if len(shapes) > max_shapes:
+            raise ValueError(
+                f"Selected area has {len(shapes)} shapes; maximum is {max_shapes}."
+            )
+
+        coordinate_count = sum(get_num_coordinates(shape) for shape in shapes)
+        if coordinate_count > max_coordinates:
+            raise ValueError(
+                "Selected area has "
+                f"{coordinate_count} coordinates; maximum is {max_coordinates}."
+            )
 
     @abstractmethod
     def validate_geometry(self, dataset_bbox: geom.Polygon):
