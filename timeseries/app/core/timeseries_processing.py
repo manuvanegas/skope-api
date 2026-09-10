@@ -118,8 +118,11 @@ def apply_zscore_transform(base_series: pd.Series, transform) -> pd.Series:
         return base_series
 
     if isinstance(transform, ZScoreMovingInterval):
-        roll = base_series.rolling(transform.width)
-        return (base_series - roll.mean()) / roll.std()
+        # Compare each observation with the preceding window. The current
+        # observation must not influence its own reference distribution.
+        roll = base_series.shift(1).rolling(transform.width)
+        rolling_std = roll.std(ddof=0).replace(0, np.nan)
+        return (base_series - roll.mean()) / rolling_std
 
     if isinstance(transform, ZScoreFixedInterval):
         if transform.time_range is None:
@@ -133,7 +136,7 @@ def apply_zscore_transform(base_series: pd.Series, transform) -> pd.Series:
                     f"[{base_series.index[0]}, {base_series.index[-1]}]. "
                     "Ensure the reference interval falls within the extraction time range."
                 )
-        std = ref.std()
+        std = ref.std(ddof=0)
         if std == 0 or np.isnan(std):
             return pd.Series(0.0, index=base_series.index)
         return (base_series - ref.mean()) / std
@@ -158,6 +161,7 @@ async def execute_timeseries_job(
     dataset_crs: str,
     dataset_transform_array: List[float],
     max_concurrency: int = 10,
+    resolved_time_range: Tuple[str, str] | None = None,
 ) -> Tuple[TimeseriesResponse, dict]:
     uris = list(file_mapping.keys())
     if not uris:
@@ -223,7 +227,10 @@ async def execute_timeseries_job(
         output_series_list.append(
             Series(
                 options=option,
-                time_range={"gte": request.time_range.gte, "lte": request.time_range.lte},
+                time_range={
+                    "gte": resolved_time_range[0] if resolved_time_range else request.time_range.gte,
+                    "lte": resolved_time_range[1] if resolved_time_range else request.time_range.lte,
+                },
                 values=smoothed.replace({np.nan: None}).to_list(),
             )
         )

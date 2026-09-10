@@ -7,8 +7,10 @@ Background tasks run synchronously inside Starlette's TestClient, so each
 client.post() returns only after the task has written its final status.
 """
 import pytest
+from fastapi.responses import Response
 
 from app.tests.pipeline.conftest import SINGLE_CELL_POLYGON
+from app.core.job_control import ExtractionJobController, get_job_controller
 
 EXTRACT_URL = "/timeseries/extract"
 ANALYZE_URL = "/timeseries/analyze"
@@ -61,6 +63,25 @@ def _get_status(client, job_id: str) -> dict:
     return resp.json()
 
 
+@pytest.mark.integration
+@pytest.mark.parametrize("query", ["", "?colormap=undefined"])
+def test_tile_uses_registry_colormap_when_override_is_absent_or_invalid(
+    pipeline_client, monkeypatch, query
+):
+    captured = {}
+
+    async def fake_stream_tile(**kwargs):
+        captured.update(kwargs)
+        return Response(content=b"tile", media_type="image/png")
+
+    monkeypatch.setattr("app.routers.v3.api.stream_tile", fake_stream_tile)
+
+    response = pipeline_client.get(f"/tiles/test-annual/ppt/0001/0/0/0{query}")
+
+    assert response.status_code == 200
+    assert captured["colormap"] == "viridis"
+
+
 # ---------------------------------------------------------------------------
 # Extract pipeline — happy path
 
@@ -95,6 +116,50 @@ def test_extract_partial_range_returns_correct_slice(pipeline_client):
     series = job["result"]["series"][0]
     assert series["time_range"] == {"gte": "0002", "lte": "0004"}
     assert len(series["values"]) == 3
+
+
+@pytest.mark.integration
+def test_extract_null_range_uses_dataset_period(pipeline_client):
+    job_id = _do_extract(
+        pipeline_client, "test-annual", "0001", "0005", time_range=None
+    )
+    job = _get_status(pipeline_client, job_id)
+
+    assert job["status"] == "SUCCESS"
+    assert job["result"]["series"][0]["time_range"] == {
+        "gte": "0001",
+        "lte": "0005",
+    }
+
+
+@pytest.mark.integration
+def test_extract_rejected_when_worker_is_at_capacity(pipeline_client):
+    controller = ExtractionJobController(limit=1)
+    assert controller.try_acquire()
+    pipeline_client.app.dependency_overrides[get_job_controller] = lambda: controller
+
+    response = pipeline_client.post(
+        EXTRACT_URL, json=_extract_payload("test-annual", "0001", "0005")
+    )
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "5"
+    controller.release()
+
+
+@pytest.mark.integration
+def test_extract_processing_deadline_is_enforced(pipeline_client):
+    job_id = _do_extract(
+        pipeline_client,
+        "test-annual",
+        "0001",
+        "0005",
+        max_processing_time=0,
+    )
+
+    job = _get_status(pipeline_client, job_id)
+    assert job["status"] == "FAILED"
+    assert job["error"] == "Processing exceeded 0 ms."
 
 
 # ---------------------------------------------------------------------------

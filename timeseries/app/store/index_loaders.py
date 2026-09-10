@@ -74,6 +74,14 @@ async def resolve_colormaps(
         )
         colormaps = {}
 
+    # Every variable advertises an effective colormap. This keeps metadata,
+    # frontend colorbars, and tile rendering on the same contract even when a
+    # registry entry does not choose a dataset-specific palette.
+    for ds in registry_dict.values():
+        for var in ds.get("variables", []):
+            if not var.get("colormap"):
+                var["colormap"] = "viridis"
+
     names_needed = {
         var.get("colormap")
         for ds in registry_dict.values()

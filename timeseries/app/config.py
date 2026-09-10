@@ -2,7 +2,7 @@ from functools import lru_cache
 from logging.config import dictConfig
 from pathlib import Path
 from typing import List, Optional, Tuple, Type
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_settings import (
     BaseSettings,
     SettingsConfigDict,
@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     name: str = "SKOPE API Services (development)"
     base_uri: str = "timeseries"
     max_processing_time: int = 15000  # in milliseconds
+    max_concurrent_jobs: int = Field(default=1, ge=1, le=32)
     default_max_cells:int = 1000000  # max number of cells to extract from data cubes
     store: Store
     redis_url: Optional[str] = None

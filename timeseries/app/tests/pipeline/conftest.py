@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.store.data_reader import LocalDataReader
 from app.store.jobs import FileSystemJobStore, get_job_store
+from app.core.job_control import get_job_controller
 
 # Absolute path to the local test rasters and lookup subdirectories.
 # fetch_lookup_dict constructs: {DATA_DIR}/{dataset_id}/lookup.json
@@ -19,12 +20,14 @@ TEST_REGISTRY = {
         "id": "test-annual",
         "crs": "EPSG:4326",
         "transform": [1.0, 0.0, -123.0, 0.0, -1.0, 45.0],
+        "timespan": {"period": {"gte": "0001", "lte": "0005"}},
         "variables": [{"id": "ppt"}],
     },
     "test-monthly": {
         "id": "test-monthly",
         "crs": "EPSG:4326",
         "transform": [1.0, 0.0, -123.0, 0.0, -1.0, 45.0],
+        "timespan": {"period": {"gte": "0001-01", "lte": "0005-12"}},
         "variables": [{"id": "ppt"}],
     },
 }
@@ -74,3 +77,4 @@ def pipeline_client(monkeypatch, tmp_path, job_store):
             yield client
     finally:
         app.dependency_overrides.clear()
+        get_job_controller.cache_clear()

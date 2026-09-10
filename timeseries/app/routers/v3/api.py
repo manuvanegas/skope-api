@@ -7,6 +7,7 @@ from app.config import get_settings
 from app.schemas.timeseries import TimeseriesAnalyzeRequest, TimeseriesRequest
 from app.store.jobs import JobStore, get_job_store
 from app.core.validation import validate_geom_size, validate_dataset_and_variable
+from app.core.job_control import ExtractionJobController, get_job_controller
 from app.core.tiles import stream_tile
 from app.core.timeseries_tasks import run_timeseries_pipeline_task
 from app.core.timeseries_processing import execute_analyze_request
@@ -33,7 +34,7 @@ async def get_map_tile(
     z: int = Path(...),
     x: int = Path(...),
     y: int = Path(...),
-    colormap: str = Query("viridis", description="Color palette name (e.g., magma, inferno)"),
+    colormap: str | None = Query(None, description="Optional color palette override"),
     rescale: str = Query("0,100", description="min,max data values to map to the colormap")
 ) -> StreamingResponse:
     """
@@ -48,6 +49,17 @@ async def get_map_tile(
         raise HTTPException(status_code=404, detail=str(e))
 
 
+    variable = next(
+        var for var in registry[dataset_id].get("variables", [])
+        if var.get("id") == variable_id
+    )
+    requested_colormap = colormap.strip() if colormap else ""
+    effective_colormap = (
+        variable.get("colormap", "viridis")
+        if requested_colormap.lower() in {"", "undefined", "null"}
+        else requested_colormap
+    )
+
     return await stream_tile(
         app_state=app_state,
         dataset_id=dataset_id,
@@ -56,7 +68,7 @@ async def get_map_tile(
         z=z,
         x=x,
         y=y,
-        colormap=colormap,
+        colormap=effective_colormap,
         rescale=rescale
     )
 
@@ -67,7 +79,8 @@ async def create_timeseries_job(
     request: Request,
     payload: TimeseriesRequest, 
     background_tasks: BackgroundTasks,
-    store: JobStore = Depends(get_job_store)
+    store: JobStore = Depends(get_job_store),
+    job_controller: ExtractionJobController = Depends(get_job_controller),
 ):
     # Validate dataset and variable IDs against the registry before accepting the job
     registry = request.app.state.global_registry
@@ -88,17 +101,29 @@ async def create_timeseries_job(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+    if not job_controller.try_acquire():
+        raise HTTPException(
+            status_code=503,
+            detail="The extraction service is at capacity. Retry later.",
+            headers={"Retry-After": "5"},
+        )
+
     # Generate a unique job ID, store initial job status, initiate background processing, and return the job ID to the client
     job_id = str(uuid.uuid4())
-    store.update_job(job_id, {"status": "PENDING"})
-    background_tasks.add_task(
-        run_timeseries_pipeline_task,
-        job_id=job_id,
-        payload=payload,
-        store=store,
-        registry=request.app.state.global_registry,
-        data_reader=request.app.state.data_reader,
-    )
+    try:
+        store.update_job(job_id, {"status": "PENDING"})
+        background_tasks.add_task(
+            run_timeseries_pipeline_task,
+            job_id=job_id,
+            payload=payload,
+            store=store,
+            registry=request.app.state.global_registry,
+            data_reader=request.app.state.data_reader,
+            job_controller=job_controller,
+        )
+    except Exception:
+        job_controller.release()
+        raise
     
     return {"job_id": job_id, "status": "accepted"}
 

@@ -98,23 +98,24 @@ def test_zscore_moving_interval_leading_nan(base_series):
     result = apply_zscore_transform(base_series, ZScoreMovingInterval(width=3))
     assert pd.isna(result.iloc[0])
     assert pd.isna(result.iloc[1])
-    # idx 2: (3 - mean([1,2,3])) / std([1,2,3]) = (3 - 2) / 1 = 1.0
-    assert np.isclose(result.iloc[2], 1.0)
+    assert pd.isna(result.iloc[2])
+    # idx 3 compares 4 against the prior values [1,2,3], using population std.
+    assert np.isclose(result.iloc[3], (4.0 - 2.0) / np.std([1.0, 2.0, 3.0]))
 
 
 def test_zscore_fixed_interval_full_series(base_series):
     result = apply_zscore_transform(base_series, ZScoreFixedInterval(time_range=None))
-    expected = (base_series - base_series.mean()) / base_series.std()
+    expected = (base_series - base_series.mean()) / base_series.std(ddof=0)
     np.testing.assert_allclose(result.values, expected.values)
 
 
 def test_zscore_fixed_interval_with_time_range(base_series):
-    # ref = values at 0102, 0103, 0104 = [3, 4, 5]; mean=4.0, std=1.0
+    # ref = values at 0102, 0103, 0104 = [3, 4, 5]
     transform = ZScoreFixedInterval(time_range=TimeRange(gte="0102", lte="0104"))
     result = apply_zscore_transform(base_series, transform)
     assert len(result) == len(base_series)
     ref_mean = 4.0
-    ref_std = 1.0
+    ref_std = np.std([3.0, 4.0, 5.0])
     np.testing.assert_allclose(result.iloc[0], (1.0 - ref_mean) / ref_std)
     np.testing.assert_allclose(result.iloc[2], (3.0 - ref_mean) / ref_std)
 

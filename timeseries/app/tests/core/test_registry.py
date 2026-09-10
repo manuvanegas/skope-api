@@ -1,7 +1,8 @@
 import pytest
 import yaml
+from unittest.mock import AsyncMock
 
-from app.store.index_loaders import load_registry
+from app.store.index_loaders import load_registry, resolve_colormaps
 from app.core.slice_resolver import resolve_temporal_slice, resolve_uri_single_band
 
 
@@ -78,6 +79,29 @@ def test_load_registry_invalid_yaml_raises(tmp_path):
     registry_file.write_text("key: [unclosed")
     with pytest.raises(ValueError, match="Failed to parse registry YAML"):
         load_registry(registry_file)
+
+
+async def test_resolve_colormaps_assigns_and_resolves_default(tmp_path, monkeypatch):
+    registry = {
+        "dataset": {
+            "variables": [
+                {"id": "defaulted"},
+                {"id": "custom", "colormap": "skope-precip"},
+            ]
+        }
+    }
+    colormaps_path = tmp_path / "colormaps.json"
+    colormaps_path.write_text('{}')
+    fetch = AsyncMock(side_effect=lambda _client, _url, name: [f"#{name}"])
+    monkeypatch.setattr("app.store.index_loaders._fetch_colormap_from_titiler", fetch)
+
+    await resolve_colormaps(registry, colormaps_path, object(), "http://titiler")
+
+    defaulted, custom = registry["dataset"]["variables"]
+    assert defaulted["colormap"] == "viridis"
+    assert defaulted["colormap_stops"] == ["#viridis"]
+    assert custom["colormap"] == "skope-precip"
+    assert custom["colormap_stops"] == ["#skope-precip"]
 
 
 # ---------------------------------------------------------------------------
