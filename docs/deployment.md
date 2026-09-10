@@ -26,7 +26,8 @@ DNS, TLS, and the public reverse proxy are owned by `comses/infrastructure`.
    `deploy/metadata/<environment>.yml` registry in sync. For staging and
    production, confirm `/srv/datasets` is mounted and readable and that each
    deployed dataset has a valid `{dataset_id}/lookup.json` with all referenced
-   COGs present.
+   COGs present. Follow the [dataset preparation runbook](data-preparation.md)
+   to build, validate, and promote dataset artifacts.
 4. Coordinate around active extraction jobs. Redis retains job state for 24
    hours, but an API worker restart abandons work executing in that worker.
    Clients must resubmit jobs that remain nonterminal across a deployment.
