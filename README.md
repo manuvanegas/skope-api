@@ -48,6 +48,9 @@ resumable jobs.
 
 ## Staging and Production
 
+See the [deployment runbook](docs/deployment.md) for preflight checks,
+verification, rollback, and routine operations for all environments.
+
 The application hosts are provisioned by `comses/infrastructure`. Both environments
 use `/srv/apps/skope-api` for this checkout, `/srv/datasets` for dataset storage,
 and host port `8001` for the API. From the appropriate host, deploy with:
