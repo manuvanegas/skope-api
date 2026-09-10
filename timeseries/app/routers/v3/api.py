@@ -127,7 +127,7 @@ async def create_timeseries_job(
     # Generate a unique job ID, store initial job status, initiate background processing, and return the job ID to the client
     job_id = str(uuid.uuid4())
     try:
-        store.update_job(job_id, {"status": "PENDING"})
+        await store.update_job(job_id, {"status": "PENDING"})
         background_tasks.add_task(
             run_timeseries_pipeline_task,
             job_id=job_id,
@@ -150,7 +150,7 @@ async def analyze_timeseries(
     payload: TimeseriesAnalyzeRequest,
     store: JobStore = Depends(get_job_store),
 ):
-    extraction = store.get_job_status(payload.extraction_id)
+    extraction = await store.get_job_status(payload.extraction_id)
     if not extraction:
         raise HTTPException(status_code=404, detail="Extraction not found. It may have expired.")
     if extraction.get("status") != "SUCCESS":
@@ -176,7 +176,7 @@ async def get_job_status(
     job_id: str = Path(...),
     store: JobStore = Depends(get_job_store)
 ):
-    job = store.get_job_status(job_id)
+    job = await store.get_job_status(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     job.pop("base_series", None)

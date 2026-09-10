@@ -271,8 +271,8 @@ def test_analyze_nonexistent_job_returns_404(pipeline_client):
 
 
 @pytest.mark.integration
-def test_analyze_pending_job_returns_409(pipeline_client, job_store):
-    job_store.update_job("pending-job", {"status": "PENDING"})
+async def test_analyze_pending_job_returns_409(pipeline_client, job_store):
+    await job_store.update_job("pending-job", {"status": "PENDING"})
 
     resp = pipeline_client.post(
         ANALYZE_URL, json=_analyze_payload("pending-job")
@@ -281,8 +281,8 @@ def test_analyze_pending_job_returns_409(pipeline_client, job_store):
 
 
 @pytest.mark.integration
-def test_analyze_failed_job_returns_409(pipeline_client, job_store):
-    job_store.update_job("failed-job", {"status": "FAILED", "error": "upstream error"})
+async def test_analyze_failed_job_returns_409(pipeline_client, job_store):
+    await job_store.update_job("failed-job", {"status": "FAILED", "error": "upstream error"})
 
     resp = pipeline_client.post(
         ANALYZE_URL, json=_analyze_payload("failed-job")

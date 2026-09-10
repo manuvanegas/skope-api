@@ -25,7 +25,7 @@ async def run_timeseries_pipeline_task(
 ):
     try:
         with anyio.fail_after(payload.max_processing_time / 1000):
-            store.update_job(job_id, {"status": "PROCESSING"})
+            await store.update_job(job_id, {"status": "PROCESSING"})
         
             dataset_metadata = registry[payload.dataset_id]
             dataset_crs = dataset_metadata["crs"]
@@ -65,7 +65,7 @@ async def run_timeseries_pipeline_task(
         # Save result + base series to JobStore.
         # base_series stores both mean and median zonal stats with timestep index,
         # enabling the synchronous /analyze endpoint to apply any transform/smoother without additional S3 reads.
-            store.update_job(job_id, {
+            await store.update_job(job_id, {
                 "status": "SUCCESS",
                 "result": timeseries_response.model_dump(),
                 "base_series": base_series_payload,
@@ -77,21 +77,24 @@ async def run_timeseries_pipeline_task(
             job_id,
             payload.max_processing_time,
         )
-        store.update_job(job_id, {
+        await store.update_job(job_id, {
             "status": "FAILED",
             "error": f"Processing exceeded {payload.max_processing_time} ms.",
         })
         
     except ValueError as ve:
         logger.error(f"Job {job_id} failed validation: {ve}")
-        store.update_job(job_id, {"status": "FAILED", "error": str(ve)})
+        await store.update_job(job_id, {"status": "FAILED", "error": str(ve)})
         
     except HTTPException as he:
         logger.error(f"Job {job_id} failed upstream fetch: {he.detail}")
-        store.update_job(job_id, {"status": "FAILED", "error": he.detail})
+        await store.update_job(job_id, {"status": "FAILED", "error": he.detail})
         
     except Exception as e:
         logger.exception(f"Job {job_id} encountered a fatal execution error.")
-        store.update_job(job_id, {"status": "FAILED", "error": "An internal processing error occurred."})
+        await store.update_job(
+            job_id,
+            {"status": "FAILED", "error": "An internal processing error occurred."},
+        )
     finally:
         job_controller.release()

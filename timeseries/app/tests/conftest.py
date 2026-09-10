@@ -113,10 +113,11 @@ def fs_job_store(tmp_jobs_dir):
 
 
 @pytest.fixture
-def redis_job_store():
+async def redis_job_store():
     store = RedisJobStore(os.environ.get("REDIS_URL", "redis://redis:6379"))
     yield store
-    store._client.flushdb()
+    await store._client.flushdb()
+    await store.close()
 
 
 # ---------------------------------------------------------------------------
