@@ -18,6 +18,16 @@ STATUS_URL  = "/timeseries/status"
 
 
 # ---------------------------------------------------------------------------
+# Public surface
+
+@pytest.mark.integration
+def test_settings_endpoint_is_not_exposed(pipeline_client):
+    response = pipeline_client.get("/settings")
+
+    assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 
 def _extract_payload(dataset_id: str, gte: str, lte: str, **overrides) -> dict:

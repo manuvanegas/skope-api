@@ -59,12 +59,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/settings")
-async def info():
-    info_dict = dict(settings.__dict__)
-    info_dict.update(logfile=settings.logging_config_file)
-    return info_dict
-
 @app.exception_handler(TimeseriesTimeoutError)
 async def timeseries_timeout_error_handler(request: Request, exc: TimeseriesTimeoutError):
     return JSONResponse(
