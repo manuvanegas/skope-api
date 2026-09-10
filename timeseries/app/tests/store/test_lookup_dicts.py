@@ -20,6 +20,7 @@ def isolate_cache_dir(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # fetch_lookup_dict — cache hit
 
+
 async def test_cache_hit_returns_cached_data(minimal_lookup_data, mock_data_reader):
     _set_cached_lookup("cached-ds", minimal_lookup_data)
     result = await fetch_lookup_dict("cached-ds", "s3://bucket", mock_data_reader)
@@ -30,10 +31,13 @@ async def test_cache_hit_returns_cached_data(minimal_lookup_data, mock_data_read
 # ---------------------------------------------------------------------------
 # fetch_lookup_dict — cache miss
 
+
 async def test_cache_miss_fetches_from_origin(minimal_lookup_data, mock_data_reader):
     result = await fetch_lookup_dict("fresh-ds", "s3://bucket", mock_data_reader)
     assert result == minimal_lookup_data
-    mock_data_reader.read_json.assert_called_once_with("s3://bucket/fresh-ds/lookup.json")
+    mock_data_reader.read_json.assert_called_once_with(
+        "s3://bucket/fresh-ds/lookup.json"
+    )
 
 
 async def test_caches_after_miss(minimal_lookup_data, mock_data_reader):
@@ -45,6 +49,7 @@ async def test_caches_after_miss(minimal_lookup_data, mock_data_reader):
 
 # ---------------------------------------------------------------------------
 # fetch_lookup_dict — schema validation
+
 
 async def test_invalid_schema_missing_file_key_raises(mock_data_reader):
     mock_data_reader.read_json.return_value = {"ppt": {"0100": {"bidx": 1}}}
@@ -66,6 +71,7 @@ async def test_empty_data_raises(mock_data_reader):
 
 # ---------------------------------------------------------------------------
 # fetch_lookup_dict — time key validation
+
 
 async def test_invalid_time_key_format_raises(mock_data_reader):
     mock_data_reader.read_json.return_value = {
@@ -96,6 +102,7 @@ async def test_fetch_error_raises(mock_data_reader):
 # ---------------------------------------------------------------------------
 # _get_cached_lookup
 
+
 def test_get_cached_lookup_returns_none_for_missing():
     result = _get_cached_lookup("never-stored")
     assert result is None
@@ -115,7 +122,10 @@ def test_get_cached_lookup_returns_none_for_corrupted_json(tmp_path, monkeypatch
 # ---------------------------------------------------------------------------
 # _set_cached_lookup
 
-def test_set_cached_lookup_writes_atomically(minimal_lookup_data, tmp_path, monkeypatch):
+
+def test_set_cached_lookup_writes_atomically(
+    minimal_lookup_data, tmp_path, monkeypatch
+):
     cache_dir = str(tmp_path / "write_cache")
     os.makedirs(cache_dir, exist_ok=True)
     monkeypatch.setattr("app.store.index_loaders._CACHE_DIR", cache_dir)

@@ -78,7 +78,8 @@ test-api: prepare ##- Build the development image and run the API tests
 	@$(TEST_COMPOSE) config --quiet
 	$(TEST_COMPOSE) build server titiler
 	@trap '$(TEST_COMPOSE) down --remove-orphans' EXIT INT TERM; \
-		$(TEST_COMPOSE) run --rm server pytest -c app/pytest.ini app/tests
+		$(TEST_COMPOSE) run --rm server sh -c \
+		'black --check app && pytest -c app/pytest.ini app/tests'
 
 test-ingest: override ENVIRONMENT=dev
 test-ingest: prepare ##- Build and run the ingest tests

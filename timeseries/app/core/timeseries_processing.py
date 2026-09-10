@@ -36,23 +36,32 @@ RASTERIO_ENV_KWARGS = {
     "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": "tif,tiff,ovr",
     "VSI_CACHE": "TRUE",
     "GDAL_HTTP_RETRY__COUNT": "3",
-    "AWS_NO_SIGN_REQUEST": "YES"
+    "AWS_NO_SIGN_REQUEST": "YES",
 }
 
-def calculate_safe_chunk_size(width: int, height: int, max_cells: int = settings.default_max_cells) -> int:
+
+def calculate_safe_chunk_size(
+    width: int, height: int, max_cells: int = settings.default_max_cells
+) -> int:
     n_cells_per_band = width * height
     if n_cells_per_band == 0:
         raise ValueError("The requested geometry resulted in a 0-pixel window.")
-        
+
     n_bands_per_chunk = max_cells // n_cells_per_band
     if n_bands_per_chunk == 0:
-        raise SelectedAreaPolygonIsTooLarge(n_cells=n_cells_per_band, max_cells=max_cells)
-        
+        raise SelectedAreaPolygonIsTooLarge(
+            n_cells=n_cells_per_band, max_cells=max_cells
+        )
+
     return n_bands_per_chunk
 
-def generate_band_chunks(band_indices: Sequence[int], chunk_size: int) -> Iterator[Sequence[int]]:
+
+def generate_band_chunks(
+    band_indices: Sequence[int], chunk_size: int
+) -> Iterator[Sequence[int]]:
     for i in range(0, len(band_indices), chunk_size):
         yield band_indices[i : i + chunk_size]
+
 
 def calculate_spatial_coverage(
     shapes: list,
@@ -61,10 +70,21 @@ def calculate_spatial_coverage(
     dataset_crs: str,
 ) -> Tuple[np.ndarray, int, float]:
     window_transform = rasterio.windows.transform(window, dataset_transform)
-    mask = geometry_mask(shapes, transform=window_transform, invert=True, out_shape=(window.height, window.width))
+    mask = geometry_mask(
+        shapes,
+        transform=window_transform,
+        invert=True,
+        out_shape=(window.height, window.width),
+    )
     if np.sum(mask) == 0:
         # Fallback for point geometries or small, sub-pixel polygons that don't cover any pixel center
-        mask = geometry_mask(shapes, transform=window_transform, invert=True, out_shape=(window.height, window.width), all_touched=True)
+        mask = geometry_mask(
+            shapes,
+            transform=window_transform,
+            invert=True,
+            out_shape=(window.height, window.width),
+            all_touched=True,
+        )
     n_cells = int(np.sum(mask))
 
     crs = CRS.from_string(dataset_crs)
@@ -76,6 +96,7 @@ def calculate_spatial_coverage(
         total_area = float(union.area)
 
     return mask, n_cells, total_area
+
 
 def extract_summarystat_timeseries(
     file_uri: str,
@@ -107,6 +128,7 @@ def extract_summarystat_timeseries(
         logger.error(f"Failed to process file {file_uri}: {e}")
         raise
 
+
 def apply_zscore_transform(base_series: pd.Series, transform) -> pd.Series:
     """Applies a Z-score transform to a time-indexed pd.Series.
 
@@ -127,7 +149,7 @@ def apply_zscore_transform(base_series: pd.Series, transform) -> pd.Series:
         if transform.time_range is None:
             ref = base_series
         else:
-            ref = base_series.loc[transform.time_range.gte:transform.time_range.lte]
+            ref = base_series.loc[transform.time_range.gte : transform.time_range.lte]
             if len(ref) == 0:
                 raise ValueError(
                     f"Reference range [{transform.time_range.gte}, {transform.time_range.lte}] "
@@ -147,11 +169,10 @@ def apply_temporal_transform(timeseries_data: pd.Series, smoother_config) -> pd.
     if isinstance(smoother_config, MovingAverageSmoother):
         center = smoother_config.method == "centered"
         return timeseries_data.rolling(
-            window=smoother_config.width, 
-            center=center, 
-            min_periods=1
+            window=smoother_config.width, center=center, min_periods=1
         ).mean()
     return timeseries_data
+
 
 async def execute_timeseries_job(
     request: TimeseriesRequest,
@@ -166,16 +187,21 @@ async def execute_timeseries_job(
     if not uris:
         raise ValueError("No matching files found in the requested time range.")
 
-    
     reprojected_shapes, dataset_transform, window = resolve_spatial_window(
         request.selected_area.shapes,
         dataset_transform_array,
         dataset_crs,
     )
 
-    mask, n_cells, total_area = calculate_spatial_coverage(reprojected_shapes, dataset_transform, window, dataset_crs)
-    chunk_size = calculate_safe_chunk_size(width=int(window.width), height=int(window.height))
-    logger.info(f"RAM Governor set chunk size to {chunk_size}. Area: {total_area} sqm. Cells: {n_cells}")
+    mask, n_cells, total_area = calculate_spatial_coverage(
+        reprojected_shapes, dataset_transform, window, dataset_crs
+    )
+    chunk_size = calculate_safe_chunk_size(
+        width=int(window.width), height=int(window.height)
+    )
+    logger.info(
+        f"RAM Governor set chunk size to {chunk_size}. Area: {total_area} sqm. Cells: {n_cells}"
+    )
 
     limiter = anyio.CapacityLimiter(max_concurrency)
     results: List[Tuple[str, np.ndarray]] = []
@@ -183,8 +209,7 @@ async def execute_timeseries_job(
     async def _worker_wrapper(uri: str, bands: List[int]):
         async with limiter:
             result = await anyio.to_thread.run_sync(
-                extract_summarystat_timeseries,
-                uri, bands, window, mask, chunk_size
+                extract_summarystat_timeseries, uri, bands, window, mask, chunk_size
             )
             results.append(result)
 
@@ -200,11 +225,11 @@ async def execute_timeseries_job(
     uri_order = {uri: i for i, uri in enumerate(uris)}
     results.sort(key=lambda x: uri_order[x[0]])
 
-    full_mean   = np.concatenate([res[1] for res in results])
+    full_mean = np.concatenate([res[1] for res in results])
     full_median = np.concatenate([res[2] for res in results])
 
     # Time-indexed series — enables label-based slicing in apply_zscore_transform
-    base_mean_series   = pd.Series(full_mean,   index=timestep_list)
+    base_mean_series = pd.Series(full_mean, index=timestep_list)
     base_median_series = pd.Series(full_median, index=timestep_list)
 
     # TODO: "mean"/"median" keys are hardwired to match ZonalStatistic enum values.
@@ -225,8 +250,16 @@ async def execute_timeseries_job(
             Series(
                 options=option,
                 time_range={
-                    "gte": resolved_time_range[0] if resolved_time_range else request.time_range.gte,
-                    "lte": resolved_time_range[1] if resolved_time_range else request.time_range.lte,
+                    "gte": (
+                        resolved_time_range[0]
+                        if resolved_time_range
+                        else request.time_range.gte
+                    ),
+                    "lte": (
+                        resolved_time_range[1]
+                        if resolved_time_range
+                        else request.time_range.lte
+                    ),
                 },
                 values=smoothed.replace({np.nan: None}).to_list(),
             )
@@ -252,8 +285,8 @@ async def execute_timeseries_job(
     )
     base_series_payload = {
         "timesteps": timestep_list,
-        "mean":      [None if np.isnan(v) else float(v) for v in full_mean],
-        "median":    [None if np.isnan(v) else float(v) for v in full_median],
+        "mean": [None if np.isnan(v) else float(v) for v in full_mean],
+        "median": [None if np.isnan(v) else float(v) for v in full_median],
     }
     return timeseries_response, base_series_payload
 
@@ -267,7 +300,7 @@ def execute_analyze_request(
 
     Called synchronously by POST /v3/timeseries/analyze.
     """
-    stat_key = payload.zonal_statistic.value    # "mean" or "median"
+    stat_key = payload.zonal_statistic.value  # "mean" or "median"
     full_base_series = pd.Series(
         base_series_payload[stat_key],
         index=base_series_payload["timesteps"],
@@ -280,7 +313,9 @@ def execute_analyze_request(
 
     # Slice to the requested time range after transform
     if payload.time_range:
-        response_series = transformed_full.loc[payload.time_range.gte:payload.time_range.lte]
+        response_series = transformed_full.loc[
+            payload.time_range.gte : payload.time_range.lte
+        ]
         if response_series.empty:
             raise ValueError(
                 f"Requested time_range [{payload.time_range.gte}, {payload.time_range.lte}] "
@@ -298,7 +333,9 @@ def execute_analyze_request(
         output_series_list.append(
             Series(
                 options=option,
-                time_range=TimeRange(gte=response_series.index[0], lte=response_series.index[-1]),
+                time_range=TimeRange(
+                    gte=response_series.index[0], lte=response_series.index[-1]
+                ),
                 values=smoothed.replace({np.nan: None}).to_list(),
             )
         )

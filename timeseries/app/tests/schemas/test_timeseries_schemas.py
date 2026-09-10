@@ -7,9 +7,9 @@ from app.schemas.timeseries import (
     TimeseriesRequest,
 )
 
-
 # ---------------------------------------------------------------------------
 # TimeRange
+
 
 def test_time_range_valid():
     tr = TimeRange(gte="0001-01-01", lte="0005-12-31")
@@ -40,6 +40,7 @@ def test_time_range_bare_year_valid():
 
 # ---------------------------------------------------------------------------
 # MovingAverageSmoother
+
 
 def test_moving_average_smoother_odd_centered_valid():
     s = MovingAverageSmoother(method="centered", width=3)
@@ -79,6 +80,7 @@ def test_moving_average_smoother_width_0_raises():
 # ---------------------------------------------------------------------------
 # TimeseriesRequest — pattern validation (security-relevant)
 
+
 def _make_request_dict(**overrides):
     defaults = {
         "dataset_id": "paleocar-v3",
@@ -86,7 +88,9 @@ def _make_request_dict(**overrides):
         "selected_area": {"type": "Point", "coordinates": [-110.0, 38.0]},
         "zonal_statistic": "mean",
         "transform": {"type": "NoTransform"},
-        "requested_series_options": [{"name": "raw", "smoother": {"type": "NoSmoother"}}],
+        "requested_series_options": [
+            {"name": "raw", "smoother": {"type": "NoSmoother"}}
+        ],
         "time_range": None,
     }
     defaults.update(overrides)
@@ -146,13 +150,15 @@ def test_timeseries_request_limits_geometry_coordinates(monkeypatch):
     monkeypatch.setattr("app.schemas.timeseries.settings.max_geometry_coordinates", 4)
     polygon = {
         "type": "Polygon",
-        "coordinates": [[
-            [-110.1, 37.9],
-            [-110.0, 37.9],
-            [-110.0, 38.0],
-            [-110.1, 38.0],
-            [-110.1, 37.9],
-        ]],
+        "coordinates": [
+            [
+                [-110.1, 37.9],
+                [-110.0, 37.9],
+                [-110.0, 38.0],
+                [-110.1, 38.0],
+                [-110.1, 37.9],
+            ]
+        ],
     }
 
     with pytest.raises(ValidationError, match="coordinates"):

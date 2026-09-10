@@ -1,7 +1,13 @@
 from enum import Enum
 from typing import List, Literal, Optional, Self, Union, Annotated
-from geojson_pydantic import Point, Polygon
-from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict, ValidationInfo
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+    model_validator,
+    ConfigDict,
+    ValidationInfo,
+)
 
 from app.config import get_settings
 from .geometry import (
@@ -15,37 +21,48 @@ settings = get_settings()
 
 # Strict ISO-8601 zero-padded pattern (YYYY-MM-DDTHH:MM:SSZ)
 
-ISO_TIME_PATTERN = "^\d{4}(?:-\d{2}(?:-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})?)?)?)?$"
+ISO_TIME_PATTERN = (
+    r"^\d{4}(?:-\d{2}(?:-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})?)?)?)?$"
+)
 
 
 class ZonalStatistic(str, Enum):
     mean = "mean"
     median = "median"
 
-class TimeRange(BaseModel):
-    gte: str = Field(..., pattern=ISO_TIME_PATTERN, description="Start time in ISO-8601 format")
-    lte: str = Field(..., pattern=ISO_TIME_PATTERN, description="End time in ISO-8601 format")
 
-    @model_validator(mode='after')
+class TimeRange(BaseModel):
+    gte: str = Field(
+        ..., pattern=ISO_TIME_PATTERN, description="Start time in ISO-8601 format"
+    )
+    lte: str = Field(
+        ..., pattern=ISO_TIME_PATTERN, description="End time in ISO-8601 format"
+    )
+
+    @model_validator(mode="after")
     def check_time_range_valid(self) -> Self:
         if self.gte > self.lte:
             raise ValueError("Start date cannot be after end date.")
         return self
-    
+
     model_config = ConfigDict(
         json_schema_extra={"example": {"gte": "0001-02-05", "lte": "0005-09-02"}}
     )
 
+
 # ---------------------------
 # Smoothers
+
 
 class WindowType(str, Enum):
     centered = "centered"
     trailing = "trailing"
 
+
 class NoSmoother(BaseModel):
     type: Literal["NoSmoother"] = "NoSmoother"
     model_config = ConfigDict(json_schema_extra={"example": {"type": "NoSmoother"}})
+
 
 class MovingAverageSmoother(BaseModel):
     type: Literal["MovingAverageSmoother"] = "MovingAverageSmoother"
@@ -75,10 +92,14 @@ class MovingAverageSmoother(BaseModel):
         }
     )
 
-Smoother = Annotated[Union[NoSmoother, MovingAverageSmoother], Field(discriminator="type")]
+
+Smoother = Annotated[
+    Union[NoSmoother, MovingAverageSmoother], Field(discriminator="type")
+]
 
 # ---------------------------
 # Transforms
+
 
 class ZScoreMovingInterval(BaseModel):
     """A moving Z-Score transform to the timeseries"""
@@ -90,29 +111,43 @@ class ZScoreMovingInterval(BaseModel):
         ge=1,
         le=200,
     )
-    model_config = ConfigDict(json_schema_extra={"example": {"type": "ZScoreMovingInterval", "width": 5}})
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"type": "ZScoreMovingInterval", "width": 5}}
+    )
+
 
 class ZScoreFixedInterval(BaseModel):
     """A Z-Score transform to the timeseries using a fixed interval"""
+
     type: Literal["ZScoreFixedInterval"] = "ZScoreFixedInterval"
     time_range: Optional[TimeRange] = None
-    model_config = ConfigDict(json_schema_extra={"example": {"type": "ZScoreFixedInterval"}})
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"type": "ZScoreFixedInterval"}}
+    )
+
 
 class NoTransform(BaseModel):
     """No transformation to the timeseries - return raw values"""
+
     type: Literal["NoTransform"] = "NoTransform"
     model_config = ConfigDict(json_schema_extra={"example": {"type": "NoTransform"}})
 
-Transform = Annotated[Union[ZScoreMovingInterval, ZScoreFixedInterval, NoTransform], Field(discriminator="type")]
+
+Transform = Annotated[
+    Union[ZScoreMovingInterval, ZScoreFixedInterval, NoTransform],
+    Field(discriminator="type"),
+]
 
 # ---------------------------
 # Response Models
+
 
 class SummaryStat(BaseModel):
     name: str
     mean: Optional[float]
     median: Optional[float]
     stdev: Optional[float]
+
 
 class SeriesOptions(BaseModel):
     name: str = Field(..., min_length=1, max_length=64, pattern=r"^[\w -]+$")
@@ -121,10 +156,15 @@ class SeriesOptions(BaseModel):
         json_schema_extra={
             "example": {
                 "name": "transformed",
-                "smoother": {"type": "MovingAverageSmoother", "method": "centered", "width": 3},
+                "smoother": {
+                    "type": "MovingAverageSmoother",
+                    "method": "centered",
+                    "width": 3,
+                },
             }
         }
     )
+
 
 class Series(BaseModel):
     options: SeriesOptions
@@ -132,11 +172,12 @@ class Series(BaseModel):
     values: List[Optional[float]]
 
 
-
 class TimeseriesResponse(BaseModel):
     dataset_id: str
     variable_id: str
-    area: float = Field(..., description="Area of cells in selected area in square meters")
+    area: float = Field(
+        ..., description="Area of cells in selected area in square meters"
+    )
     n_cells: int = Field(..., description="Number of cells in selected area")
     summary_stats: List[SummaryStat]
     series: List[Series]
@@ -146,6 +187,7 @@ class TimeseriesResponse(BaseModel):
 
 # ---------------------------
 # Request Models
+
 
 class SeriesOptionsRequest(BaseModel):
     requested_series_options: List[SeriesOptions] = Field(
@@ -188,7 +230,9 @@ class TimeseriesRequest(SeriesOptionsRequest):
 
 
 class TimeseriesAnalyzeRequest(SeriesOptionsRequest):
-    extraction_id: str = Field(..., description="Job ID from POST /v3/timeseries/extract")
+    extraction_id: str = Field(
+        ..., description="Job ID from POST /v3/timeseries/extract"
+    )
     zonal_statistic: ZonalStatistic = ZonalStatistic.mean
     transform: Transform
     time_range: Optional[TimeRange] = None

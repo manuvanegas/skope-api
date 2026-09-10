@@ -9,6 +9,7 @@ from fastapi import Request
 
 _JOBS_DIR = "/tmp/skope_jobs"
 
+
 class JobStore(ABC):
     @abstractmethod
     async def update_job(self, job_id: str, status_data: dict) -> None: ...
@@ -34,8 +35,9 @@ def cleanup_stale_jobs(max_age_hours: int = 24):
             if os.stat(filepath).st_mtime < now - (max_age_hours * 3600):
                 os.remove(filepath)
 
+
 # File system implementation for simplicity
-# Could be replaced with Redis or SQLite 
+# Could be replaced with Redis or SQLite
 class FileSystemJobStore(JobStore):
     def __init__(self, directory: str = _JOBS_DIR):
         self.directory = directory
@@ -62,6 +64,7 @@ class FileSystemJobStore(JobStore):
                 return json.load(f)
 
         return await anyio.to_thread.run_sync(_read)
+
 
 _JOB_TTL_SECONDS = 86400  # 24 hours — matches cleanup_stale_jobs default
 

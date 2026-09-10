@@ -60,6 +60,7 @@ def _normalize_timestep(timestep: str, var_lookup: dict) -> str:
 # ---------------------------------------------------------------------------
 # Resolvers
 
+
 def resolve_temporal_slice(
     lookup_data: dict,
     variable_id: str,
@@ -106,7 +107,9 @@ def resolve_temporal_slice(
     return file_mapping, timestep_list
 
 
-def resolve_uri_single_band(lookup_data: dict, variable_id: str, timestep: str, base_url: str) -> tuple[str, int]:
+def resolve_uri_single_band(
+    lookup_data: dict, variable_id: str, timestep: str, base_url: str
+) -> tuple[str, int]:
     """
     Convenience function for single-timestep requests (tile endpoint) that need
     to resolve to a single file and band index.
@@ -118,8 +121,12 @@ def resolve_uri_single_band(lookup_data: dict, variable_id: str, timestep: str, 
     norm_timestep = _normalize_timestep(timestep, var_lookup)
 
     if norm_timestep not in var_lookup:
-        logger.error(f"Timestep {norm_timestep} is missing in lookup for '{variable_id}'.")
-        raise ValueError(f"Timestep '{norm_timestep}' is not available for '{variable_id}' in this dataset.")
+        logger.error(
+            f"Timestep {norm_timestep} is missing in lookup for '{variable_id}'."
+        )
+        raise ValueError(
+            f"Timestep '{norm_timestep}' is not available for '{variable_id}' in this dataset."
+        )
 
     entry = var_lookup[norm_timestep]
     return f"{base_url.rstrip('/')}/{entry['file']}", entry["bidx"]

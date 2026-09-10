@@ -15,6 +15,7 @@ class LocalDataReader(DataReader):
         def _read():
             with open(uri) as f:
                 return json.load(f)
+
         return await anyio.to_thread.run_sync(_read)
 
 

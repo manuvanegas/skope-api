@@ -13,8 +13,8 @@ from pydantic_settings import (
 import yaml
 import logging
 
-
 logger = logging.getLogger(__name__)
+
 
 class Store(BaseModel):
     base_path: str
@@ -23,7 +23,7 @@ class Store(BaseModel):
 
 
 class Settings(BaseSettings):
-    allowed_origins: List[str] = ["*"]
+    allowed_origins: List[str] = Field(default_factory=lambda: ["*"])
     environment: str = "dev"
     name: str = "SKOPE API Services (development)"
     base_uri: str = "timeseries"
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     @classmethod
     def create(cls):
-        instance = Settings()
+        instance = cls()
         with open(instance.logging_config_file) as f:
             dictConfig(yaml.safe_load(f))
         return instance
@@ -58,7 +58,6 @@ class Settings(BaseSettings):
 
     @property
     def registry_path(self):
-        # return Path(f"deploy/metadata/{self.environment}.yml")
         return Path("metadata.yml")
 
     @property
@@ -72,11 +71,11 @@ class Settings(BaseSettings):
         ).resolve()
         try:
             path.relative_to(base)
-        except ValueError as e:
+        except ValueError:
             logger.warning(
                 "path traversal detected: base path %s, data path %s", base, path
             )
-            raise e
+            raise
         return path
 
     def get_dataset_path(self, dataset_id: str, variable_id: str) -> Path:
@@ -102,10 +101,11 @@ class Settings(BaseSettings):
     ) -> Tuple[PydanticBaseSettingsSource, ...]:
         return (
             init_settings,
-            YamlConfigSettingsSource(settings_cls),
             env_settings,
+            YamlConfigSettingsSource(settings_cls),
             file_secret_settings,
         )
+
 
 @lru_cache()
 def get_settings():

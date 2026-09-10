@@ -22,9 +22,9 @@ from app.schemas.timeseries import (
     ZScoreMovingInterval,
 )
 
-
 # ---------------------------------------------------------------------------
 # calculate_safe_chunk_size
+
 
 def test_chunk_size_normal():
     result = calculate_safe_chunk_size(width=100, height=50, max_cells=500_000)
@@ -56,6 +56,7 @@ def test_chunk_size_exact_fit():
 # ---------------------------------------------------------------------------
 # generate_band_chunks
 
+
 def test_generate_band_chunks_exact_division():
     chunks = list(generate_band_chunks([1, 2, 3, 4, 5, 6], chunk_size=3))
     assert chunks == [[1, 2, 3], [4, 5, 6]]
@@ -83,6 +84,7 @@ def test_generate_band_chunks_chunk_size_larger_than_list():
 
 # ---------------------------------------------------------------------------
 # apply_zscore_transform
+
 
 def test_zscore_no_transform_passthrough(base_series):
     result = apply_zscore_transform(base_series, NoTransform())
@@ -127,13 +129,16 @@ def test_zscore_fixed_interval_non_overlapping_range_raises(base_series):
 
 
 def test_zscore_fixed_interval_std_zero_returns_zero_series(constant_series):
-    result = apply_zscore_transform(constant_series, ZScoreFixedInterval(time_range=None))
+    result = apply_zscore_transform(
+        constant_series, ZScoreFixedInterval(time_range=None)
+    )
     assert (result == 0.0).all()
     assert list(result.index) == list(constant_series.index)
 
 
 # ---------------------------------------------------------------------------
 # apply_temporal_transform
+
 
 def test_temporal_transform_none_passthrough(base_series):
     result = apply_temporal_transform(base_series, None)
@@ -172,9 +177,21 @@ def test_temporal_transform_width_1_is_identity(base_series):
 # ---------------------------------------------------------------------------
 # execute_analyze_request
 
+
 def _make_base_payload(timesteps=None):
     if timesteps is None:
-        timesteps = ["0100", "0101", "0102", "0103", "0104", "0105", "0106", "0107", "0108", "0109"]
+        timesteps = [
+            "0100",
+            "0101",
+            "0102",
+            "0103",
+            "0104",
+            "0105",
+            "0106",
+            "0107",
+            "0108",
+            "0109",
+        ]
     mean_vals = [float(i + 1) for i in range(len(timesteps))]
     median_vals = [float(i) * 0.5 for i in range(len(timesteps))]
     return {"timesteps": timesteps, "mean": mean_vals, "median": median_vals}
@@ -229,7 +246,10 @@ def test_execute_analyze_request_zscore_and_smoother_combined():
     payload = _make_request(
         transform=ZScoreFixedInterval(time_range=None),
         requested_series_options=[
-            SeriesOptions(name="smoothed", smoother=MovingAverageSmoother(method="trailing", width=3))
+            SeriesOptions(
+                name="smoothed",
+                smoother=MovingAverageSmoother(method="trailing", width=3),
+            )
         ],
     )
     base = _make_base_payload()

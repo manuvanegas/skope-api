@@ -5,11 +5,11 @@ from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from starlette.status import HTTP_504_GATEWAY_TIMEOUT, HTTP_422_UNPROCESSABLE_ENTITY
+from starlette.status import HTTP_422_UNPROCESSABLE_CONTENT
 from contextlib import asynccontextmanager
 
 from app.config import get_settings
-from app.exceptions import TimeseriesValidationError, TimeseriesTimeoutError
+from app.exceptions import TimeseriesValidationError
 from app.store.jobs import cleanup_stale_jobs, create_job_store
 from app.store.data_reader import get_data_reader
 from app.store.index_loaders import load_registry, resolve_colormaps
@@ -18,6 +18,7 @@ from app.routers.v3 import api as v3_api
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cleanup_stale_jobs()
@@ -25,7 +26,9 @@ async def lifespan(app: FastAPI):
 
     # The limits ensure we don't overwhelm Titiler while handling concurrency
     limits = httpx.Limits(max_keepalive_connections=20, max_connections=100)
-    async_client = httpx.AsyncClient(timeout=httpx.Timeout(10.0, read=60.0), limits=limits)
+    async_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(10.0, read=60.0), limits=limits
+    )
     job_store = create_job_store(settings.redis_url)
     try:
         await job_store.healthcheck()
@@ -63,18 +66,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.exception_handler(TimeseriesTimeoutError)
-async def timeseries_timeout_error_handler(request: Request, exc: TimeseriesTimeoutError):
-    return JSONResponse(
-        status_code=HTTP_504_GATEWAY_TIMEOUT,
-        content={"detail": exc.message, "processing_time": exc.processing_time},
-    )
 
 @app.exception_handler(TimeseriesValidationError)
 async def timeseries_error_handler(request: Request, exc: TimeseriesValidationError):
     return JSONResponse(
-        status_code=HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=HTTP_422_UNPROCESSABLE_CONTENT,
         content={"detail": exc.to_request_validation_error().errors()},
     )
+
 
 app.include_router(v3_api.router)

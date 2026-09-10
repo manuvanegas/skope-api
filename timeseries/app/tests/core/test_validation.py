@@ -1,4 +1,3 @@
-import math
 import pytest
 from shapely.geometry import box
 
@@ -9,9 +8,9 @@ from app.core.validation import (
     validate_tile_style,
 )
 
-
 # ---------------------------------------------------------------------------
 # validate_dataset_and_variable
+
 
 def test_validate_dataset_and_variable_happy_path(minimal_registry):
     validate_dataset_and_variable(minimal_registry, "valid-ds", "ppt")  # no exception
@@ -29,6 +28,7 @@ def test_validate_dataset_and_variable_unknown_variable(minimal_registry):
 
 # ---------------------------------------------------------------------------
 # validate_tile_style
+
 
 def test_validate_tile_style_normalizes_numeric_range():
     assert validate_tile_style("viridis", "0.0,100.00") == ("viridis", "0,100")
@@ -51,6 +51,7 @@ def test_validate_tile_style_rejects_invalid_values(colormap, rescale):
 
 # ---------------------------------------------------------------------------
 # estimate_cell_count
+
 
 def test_estimate_cell_count_geographic():
     # 1° × 1° box, 0.00833° pixels, EPSG:4326
@@ -79,6 +80,7 @@ def test_estimate_cell_count_zero_area():
 
 # ---------------------------------------------------------------------------
 # validate_geom_size
+
 
 def test_validate_geom_size_within_limit(small_polygon_shape):
     dataset_entry = {

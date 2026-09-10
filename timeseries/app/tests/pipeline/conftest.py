@@ -36,10 +36,15 @@ TEST_REGISTRY = {
 # Pixel column 1, row 1 in the 5×5 grid (0-indexed from top-left at -123, 45).
 SINGLE_CELL_POLYGON = {
     "type": "Polygon",
-    "coordinates": [[
-        [-122.0, 43.0], [-121.0, 43.0], [-121.0, 44.0],
-        [-122.0, 44.0], [-122.0, 43.0],
-    ]],
+    "coordinates": [
+        [
+            [-122.0, 43.0],
+            [-121.0, 43.0],
+            [-121.0, 44.0],
+            [-122.0, 44.0],
+            [-122.0, 43.0],
+        ]
+    ],
 }
 
 

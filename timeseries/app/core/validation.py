@@ -16,7 +16,10 @@ COLORMAP_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 # ---------------------------------------------------------------------------
 # Dataset and variable validation to prevent arbitrary or malicious queries
 
-def validate_dataset_and_variable(registry: dict, dataset_id: str, variable_id: str) -> None:
+
+def validate_dataset_and_variable(
+    registry: dict, dataset_id: str, variable_id: str
+) -> None:
     """
     Validates dataset and variable existence to prevent arbitrary or malicious queries.
     Raises ValueError if the IDs are not found in the registry.
@@ -24,11 +27,13 @@ def validate_dataset_and_variable(registry: dict, dataset_id: str, variable_id: 
     dataset = registry.get(dataset_id)
     if not dataset:
         raise ValueError(f"Dataset '{dataset_id}' not found.")
-        
+
     variables = dataset.get("variables", [])
 
     if not any(var.get("id") == variable_id for var in variables):
-        raise ValueError(f"Variable '{variable_id}' not found in dataset '{dataset_id}'.")
+        raise ValueError(
+            f"Variable '{variable_id}' not found in dataset '{dataset_id}'."
+        )
 
 
 def validate_tile_style(colormap: str, rescale: str) -> tuple[str, str]:
@@ -48,10 +53,11 @@ def validate_tile_style(colormap: str, rescale: str) -> tuple[str, str]:
         raise ValueError("Rescale minimum must be less than maximum.")
 
     return colormap, f"{lower:g},{upper:g}"
-    
+
 
 # ---------------------------------------------------------------------------
 # Geometry size validation to prevent excessively large queries
+
 
 def resolve_spatial_window(
     shapes: Sequence[BaseGeometry],
@@ -86,7 +92,10 @@ def estimate_cell_count(
     _, _, window = resolve_spatial_window(shapes, transform, dataset_crs)
     return math.ceil(window.width) * math.ceil(window.height)
 
-def validate_geom_size(shapes: list[BaseGeometry], dataset_entry: dict, max_cells: int) -> None:
+
+def validate_geom_size(
+    shapes: list[BaseGeometry], dataset_entry: dict, max_cells: int
+) -> None:
     """
     Validates that the geometry does not exceed a maximum number of cells when rasterized.
     Accepts a list of Shapely geometries and a registry dataset entry (with 'crs' and 'transform').
@@ -98,4 +107,6 @@ def validate_geom_size(shapes: list[BaseGeometry], dataset_entry: dict, max_cell
     estimated_cells = estimate_cell_count(shapes, transform, dataset_entry["crs"])
 
     if estimated_cells > max_cells:
-        raise ValueError(f"Selected area is too large. Estimated cell count: {estimated_cells}, maximum allowed: {max_cells}.")
+        raise ValueError(
+            f"Selected area is too large. Estimated cell count: {estimated_cells}, maximum allowed: {max_cells}."
+        )

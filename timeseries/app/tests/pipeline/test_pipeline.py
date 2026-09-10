@@ -6,6 +6,7 @@ flow using real raster files from tests/pipeline/data/ and a LocalDataReader.
 Background tasks run synchronously inside Starlette's TestClient, so each
 client.post() returns only after the task has written its final status.
 """
+
 import pytest
 from fastapi.responses import Response
 
@@ -14,11 +15,12 @@ from app.core.job_control import ExtractionJobController, get_job_controller
 
 EXTRACT_URL = "/timeseries/extract"
 ANALYZE_URL = "/timeseries/analyze"
-STATUS_URL  = "/timeseries/status"
+STATUS_URL = "/timeseries/status"
 
 
 # ---------------------------------------------------------------------------
 # Public surface
+
 
 @pytest.mark.integration
 def test_settings_endpoint_is_not_exposed(pipeline_client):
@@ -29,6 +31,7 @@ def test_settings_endpoint_is_not_exposed(pipeline_client):
 
 # ---------------------------------------------------------------------------
 # Helpers
+
 
 def _extract_payload(dataset_id: str, gte: str, lte: str, **overrides) -> dict:
     payload = {
@@ -60,7 +63,9 @@ def _analyze_payload(extraction_id: str, **overrides) -> dict:
 
 def _do_extract(client, dataset_id: str, gte: str, lte: str, **overrides) -> str:
     """POST /extract and return the job_id. Asserts 202."""
-    resp = client.post(EXTRACT_URL, json=_extract_payload(dataset_id, gte, lte, **overrides))
+    resp = client.post(
+        EXTRACT_URL, json=_extract_payload(dataset_id, gte, lte, **overrides)
+    )
     assert resp.status_code == 202, resp.text
     job_id = resp.json()["job_id"]
     assert job_id
@@ -110,6 +115,7 @@ def test_tile_rejects_invalid_style_parameters(pipeline_client, query):
 
 # ---------------------------------------------------------------------------
 # Extract pipeline — happy path
+
 
 @pytest.mark.integration
 def test_extract_annual_full_range_succeeds(pipeline_client):
@@ -191,6 +197,7 @@ def test_extract_processing_deadline_is_enforced(pipeline_client):
 # ---------------------------------------------------------------------------
 # Extract pipeline — error cases
 
+
 @pytest.mark.integration
 def test_extract_unknown_dataset_returns_404(pipeline_client):
     resp = pipeline_client.post(
@@ -209,6 +216,7 @@ def test_extract_unknown_variable_returns_404(pipeline_client):
 
 # ---------------------------------------------------------------------------
 # Analyze pipeline — extract first, then analyze
+
 
 @pytest.mark.integration
 def test_analyze_on_extract_result_returns_correct_response(pipeline_client):
@@ -262,11 +270,10 @@ def test_analyze_with_zscore_transform_returns_valid_response(pipeline_client):
 # ---------------------------------------------------------------------------
 # Analyze pipeline — error cases (no raster I/O needed)
 
+
 @pytest.mark.integration
 def test_analyze_nonexistent_job_returns_404(pipeline_client):
-    resp = pipeline_client.post(
-        ANALYZE_URL, json=_analyze_payload("does-not-exist")
-    )
+    resp = pipeline_client.post(ANALYZE_URL, json=_analyze_payload("does-not-exist"))
     assert resp.status_code == 404
 
 
@@ -274,17 +281,15 @@ def test_analyze_nonexistent_job_returns_404(pipeline_client):
 async def test_analyze_pending_job_returns_409(pipeline_client, job_store):
     await job_store.update_job("pending-job", {"status": "PENDING"})
 
-    resp = pipeline_client.post(
-        ANALYZE_URL, json=_analyze_payload("pending-job")
-    )
+    resp = pipeline_client.post(ANALYZE_URL, json=_analyze_payload("pending-job"))
     assert resp.status_code == 409
 
 
 @pytest.mark.integration
 async def test_analyze_failed_job_returns_409(pipeline_client, job_store):
-    await job_store.update_job("failed-job", {"status": "FAILED", "error": "upstream error"})
-
-    resp = pipeline_client.post(
-        ANALYZE_URL, json=_analyze_payload("failed-job")
+    await job_store.update_job(
+        "failed-job", {"status": "FAILED", "error": "upstream error"}
     )
+
+    resp = pipeline_client.post(ANALYZE_URL, json=_analyze_payload("failed-job"))
     assert resp.status_code == 409

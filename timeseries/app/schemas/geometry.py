@@ -5,7 +5,6 @@ from typing import List
 from pydantic import ConfigDict
 from geojson_pydantic import Feature, FeatureCollection, Point, Polygon
 from shapely import geometry as geom, get_num_coordinates
-from shapely.ops import transform
 from shapely.validation import explain_validity
 
 from app.config import get_settings
@@ -17,18 +16,12 @@ from app.exceptions import (
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+
 class SkopeGeometry(metaclass=ABCMeta):
     @property
     def shapes(self) -> List[geom.base.BaseGeometry]:
         """Converts the GeoJSON Pydantic model into a list of Shapely geometries."""
         return [geom.shape(self)]
-
-    def get_reprojected_shapes(self, pyproj_transformer) -> List[geom.base.BaseGeometry]:
-        """
-        Safely maps EPSG:4326 frontend coordinates to the dataset's native CRS.
-        Requires a pre-instantiated pyproj.Transformer (always_xy=True).
-        """
-        return [transform(pyproj_transformer.transform, shape) for shape in self.shapes]
 
     def validate_complexity(self, max_shapes: int, max_coordinates: int) -> None:
         shapes = self.shapes
@@ -57,6 +50,7 @@ class SkopePointModel(Point, SkopeGeometry):
             raise SelectedAreaOutOfBoundsError(
                 "Selected area is not covered by the dataset region."
             )
+
     model_config = ConfigDict(
         json_schema_extra={"example": {"type": "Point", "coordinates": [-120, 42.5]}}
     )
@@ -69,8 +63,8 @@ class BaseSkopePolygonModel(SkopeGeometry):
                 raise SelectedAreaPolygonIsNotValid(
                     f"Selected area is not a valid polygon: {explain_validity(shape).lower()}"
                 )
-            
-            # DE-9IM format: 'T********' indicates the interior of the bounding box 
+
+            # DE-9IM format: 'T********' indicates the interior of the bounding box
             # must intersect the interior of the selected area.
             if not dataset_bbox.relate_pattern(shape, "T********"):
                 raise SelectedAreaOutOfBoundsError(

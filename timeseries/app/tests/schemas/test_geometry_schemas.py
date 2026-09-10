@@ -1,5 +1,4 @@
 import pytest
-from pyproj import Transformer
 
 from app.exceptions import SelectedAreaOutOfBoundsError, SelectedAreaPolygonIsNotValid
 from app.schemas.geometry import (
@@ -23,6 +22,7 @@ def _box_coords(minx, miny, maxx, maxy):
 # ---------------------------------------------------------------------------
 # SkopePointModel.validate_geometry
 
+
 def test_point_inside_bbox_no_error(dataset_bbox):
     point = SkopePointModel(type="Point", coordinates=[-110.0, 38.0])
     point.validate_geometry(dataset_bbox)  # no exception
@@ -42,6 +42,7 @@ def test_point_on_bbox_boundary_no_error(dataset_bbox):
 
 # ---------------------------------------------------------------------------
 # SkopePolygonModel.validate_geometry
+
 
 def test_polygon_inside_bbox_no_error(dataset_bbox):
     coords = [_box_coords(-113.0, 36.0, -111.0, 38.0)]
@@ -88,37 +89,25 @@ def test_polygon_touching_bbox_edge_only_raises(dataset_bbox):
 # ---------------------------------------------------------------------------
 # SkopeFeatureCollectionModel.shapes
 
+
 def test_feature_collection_shapes_returns_all():
-    feat1 = {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [_box_coords(-113.0, 36.0, -112.0, 37.0)]}, "properties": {}}
-    feat2 = {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [_box_coords(-111.0, 35.0, -110.0, 36.0)]}, "properties": {}}
+    feat1 = {
+        "type": "Feature",
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [_box_coords(-113.0, 36.0, -112.0, 37.0)],
+        },
+        "properties": {},
+    }
+    feat2 = {
+        "type": "Feature",
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [_box_coords(-111.0, 35.0, -110.0, 36.0)],
+        },
+        "properties": {},
+    }
     fc = SkopeFeatureCollectionModel(type="FeatureCollection", features=[feat1, feat2])
     shapes = fc.shapes
     assert len(shapes) == 2
     assert all(hasattr(s, "geom_type") for s in shapes)
-
-
-# ---------------------------------------------------------------------------
-# SkopeGeometry.get_reprojected_shapes
-
-def test_get_reprojected_shapes_identity_transform():
-    coords = [_box_coords(-112.0, 36.0, -111.0, 37.0)]
-    poly = SkopePolygonModel(type="Polygon", coordinates=coords)
-    transformer = Transformer.from_crs("EPSG:4326", "EPSG:4326", always_xy=True)
-    reprojected = poly.get_reprojected_shapes(transformer)
-    assert len(reprojected) == 1
-    orig_bounds = poly.shapes[0].bounds
-    repr_bounds = reprojected[0].bounds
-    assert abs(orig_bounds[0] - repr_bounds[0]) < 1e-6
-    assert abs(orig_bounds[1] - repr_bounds[1]) < 1e-6
-
-
-def test_get_reprojected_shapes_utm_projection():
-    coords = [_box_coords(-111.0, 37.0, -110.0, 38.0)]
-    poly = SkopePolygonModel(type="Polygon", coordinates=coords)
-    transformer = Transformer.from_crs("EPSG:4326", "EPSG:32612", always_xy=True)
-    reprojected = poly.get_reprojected_shapes(transformer)
-    assert len(reprojected) == 1
-    # UTM eastings/northings are in the hundreds of thousands of meters
-    minx, miny, maxx, maxy = reprojected[0].bounds
-    assert minx > 100_000
-    assert miny > 100_000

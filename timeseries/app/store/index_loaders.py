@@ -16,10 +16,13 @@ _CACHE_DIR = "/tmp/skope_dicts"
 os.makedirs(_CACHE_DIR, exist_ok=True)
 
 # Strict ISO-8601 zero-padded pattern (YYYY-MM-DDTHH:MM:SSZ)
-ISO_TIME_PATTERN = re.compile(r"^\d{4}(?:-\d{2}(?:-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})?)?)?)?$")
+ISO_TIME_PATTERN = re.compile(
+    r"^\d{4}(?:-\d{2}(?:-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})?)?)?)?$"
+)
 
 # ------------------------------------------------------------------
 # Registry (metadata.yml)
+
 
 def load_registry(filepath: Path) -> dict:
     """Loads the metadata registry from the local filesystem.
@@ -43,7 +46,9 @@ def load_registry(filepath: Path) -> dict:
         if "crs" not in ds:
             raise ValueError(f"Dataset '{ds_id}' is missing required 'crs'.")
         if "transform" not in ds or len(ds.get("transform", [])) not in [6, 9]:
-            raise ValueError(f"Dataset '{ds_id}' is missing a valid 6- or 9-element 'transform' array.")
+            raise ValueError(
+                f"Dataset '{ds_id}' is missing a valid 6- or 9-element 'transform' array."
+            )
         registry_dict[ds_id] = ds
 
     logger.info(f"Successfully loaded Global Registry from {filepath}.")
@@ -52,6 +57,7 @@ def load_registry(filepath: Path) -> dict:
 
 # ------------------------------------------------------------------
 # Colormaps
+
 
 async def resolve_colormaps(
     registry_dict: dict,
@@ -91,7 +97,9 @@ async def resolve_colormaps(
 
     names_from_titiler = names_needed - set(colormaps.keys())
     for name in names_from_titiler:
-        colormaps[name] = await _fetch_colormap_from_titiler(client, tile_server_url, name)
+        colormaps[name] = await _fetch_colormap_from_titiler(
+            client, tile_server_url, name
+        )
 
     for ds in registry_dict.values():
         for var in ds.get("variables", []):
@@ -122,20 +130,22 @@ async def _fetch_colormap_from_titiler(
             resp.raise_for_status()
             rgba_dict: dict[str, list[int]] = resp.json()
             return [
-                "#{:02x}{:02x}{:02x}".format(*rgba_dict[str(i)][:3])
-                for i in range(256)
+                "#{:02x}{:02x}{:02x}".format(*rgba_dict[str(i)][:3]) for i in range(256)
             ]
         except httpx.ConnectError:
             if attempt == 3:
                 raise
-            wait = 2 ** attempt  # 2 s, 4 s
-            logger.warning(f"TiTiler unreachable (attempt {attempt}/3), retrying in {wait}s…")
+            wait = 2**attempt  # 2 s, 4 s
+            logger.warning(
+                f"TiTiler unreachable (attempt {attempt}/3), retrying in {wait}s…"
+            )
             await asyncio.sleep(wait)
     raise RuntimeError("unreachable")
 
 
 # ------------------------------------------------------------------
 # Lookup Dictionary
+
 
 def _get_cached_lookup(dataset_id: str) -> dict | None:
     """Reads the dataset lookup from the local worker's shared /tmp disk."""
@@ -145,7 +155,9 @@ def _get_cached_lookup(dataset_id: str) -> dict | None:
             with open(file_path, "r") as f:
                 return json.load(f)
         except json.JSONDecodeError:
-            logger.warning(f"Corrupted cache file found for {dataset_id}. Forcing re-fetch.")
+            logger.warning(
+                f"Corrupted cache file found for {dataset_id}. Forcing re-fetch."
+            )
             return None
     return None
 
@@ -159,7 +171,9 @@ def _set_cached_lookup(dataset_id: str, data: dict) -> None:
     os.rename(temp_path, file_path)
 
 
-async def fetch_lookup_dict(dataset_id: str, storage_base_url: str, data_reader: DataReader) -> dict:
+async def fetch_lookup_dict(
+    dataset_id: str, storage_base_url: str, data_reader: DataReader
+) -> dict:
     """
     Fetches the temporal lookup dictionary. Checks the shared local disk cache first.
     If missing, fetches from origin via the provided DataReader, validates, and caches it.
@@ -195,12 +209,18 @@ async def fetch_lookup_dict(dataset_id: str, storage_base_url: str, data_reader:
                 raise ValueError(f"Upstream time format violation: {time_key}")
 
             if previous_time is not None and time_key <= previous_time:
-                logger.critical(f"Data prep error for '{dataset_id}': '{time_key}' is out of order (came after '{previous_time}').")
-                raise ValueError("Upstream data prep error: Temporal keys are not sorted chronologically.")
+                logger.critical(
+                    f"Data prep error for '{dataset_id}': '{time_key}' is out of order (came after '{previous_time}')."
+                )
+                raise ValueError(
+                    "Upstream data prep error: Temporal keys are not sorted chronologically."
+                )
 
             previous_time = time_key
 
     _set_cached_lookup(dataset_id, lookup_data)
-    logger.info(f"Successfully fetched, validated, and cached lookup dict to disk for '{dataset_id}'.")
+    logger.info(
+        f"Successfully fetched, validated, and cached lookup dict to disk for '{dataset_id}'."
+    )
 
     return lookup_data

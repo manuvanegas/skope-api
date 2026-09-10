@@ -6,9 +6,9 @@ import pytest
 
 from app.store.jobs import cleanup_stale_jobs, _JOB_TTL_SECONDS
 
-
 # ---------------------------------------------------------------------------
 # FileSystemJobStore
+
 
 async def test_update_job_creates_file(fs_job_store, tmp_jobs_dir):
     await fs_job_store.update_job("job-001", {"status": "pending"})
@@ -41,6 +41,7 @@ async def test_get_job_status_missing_returns_none(fs_job_store):
 
 # ---------------------------------------------------------------------------
 # cleanup_stale_jobs
+
 
 def test_cleanup_removes_old_files(tmp_path, monkeypatch):
     monkeypatch.setattr("app.store.jobs._JOBS_DIR", str(tmp_path))
@@ -76,6 +77,7 @@ def test_cleanup_keeps_recent_files(tmp_path, monkeypatch):
 
 # ---------------------------------------------------------------------------
 # RedisJobStore
+
 
 async def test_redis_update_job_stores_value(redis_job_store):
     await redis_job_store.update_job("job-001", {"status": "PENDING"})

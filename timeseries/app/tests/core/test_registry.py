@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock
 from app.store.index_loaders import load_registry, resolve_colormaps
 from app.core.slice_resolver import resolve_temporal_slice, resolve_uri_single_band
 
-
 # ---------------------------------------------------------------------------
 # load_registry
+
 
 def test_load_registry_missing_file(tmp_path):
     with pytest.raises(FileNotFoundError):
@@ -91,7 +91,7 @@ async def test_resolve_colormaps_assigns_and_resolves_default(tmp_path, monkeypa
         }
     }
     colormaps_path = tmp_path / "colormaps.json"
-    colormaps_path.write_text('{}')
+    colormaps_path.write_text("{}")
     fetch = AsyncMock(side_effect=lambda _client, _url, name: [f"#{name}"])
     monkeypatch.setattr("app.store.index_loaders._fetch_colormap_from_titiler", fetch)
 
@@ -106,6 +106,7 @@ async def test_resolve_colormaps_assigns_and_resolves_default(tmp_path, monkeypa
 
 # ---------------------------------------------------------------------------
 # resolve_temporal_slice
+
 
 def test_resolve_temporal_slice_normal_range(minimal_lookup_data):
     file_mapping, timestep_list = resolve_temporal_slice(
@@ -144,34 +145,47 @@ def test_resolve_temporal_slice_bands_sorted():
             "0102": {"file": "chunk.tif", "bidx": 2},
         }
     }
-    file_mapping, _ = resolve_temporal_slice(lookup, "ppt", "0100", "0102", base_url="s3://bucket")
+    file_mapping, _ = resolve_temporal_slice(
+        lookup, "ppt", "0100", "0102", base_url="s3://bucket"
+    )
     assert file_mapping["s3://bucket/chunk.tif"] == [1, 2, 3]
 
 
 def test_resolve_temporal_slice_unknown_variable(minimal_lookup_data):
     with pytest.raises(ValueError, match="nonexistent"):
-        resolve_temporal_slice(minimal_lookup_data, "nonexistent", "0100", "0105", base_url="s3://bucket")
+        resolve_temporal_slice(
+            minimal_lookup_data, "nonexistent", "0100", "0105", base_url="s3://bucket"
+        )
 
 
 def test_resolve_temporal_slice_no_data_in_range(minimal_lookup_data):
     with pytest.raises(ValueError):
-        resolve_temporal_slice(minimal_lookup_data, "ppt", "0200", "0300", base_url="s3://bucket")
+        resolve_temporal_slice(
+            minimal_lookup_data, "ppt", "0200", "0300", base_url="s3://bucket"
+        )
 
 
 # ---------------------------------------------------------------------------
 # resolve_uri_single_band
 
+
 def test_resolve_uri_single_band_found(minimal_lookup_data):
-    uri, band = resolve_uri_single_band(minimal_lookup_data, "ppt", "0103", base_url="s3://bucket")
+    uri, band = resolve_uri_single_band(
+        minimal_lookup_data, "ppt", "0103", base_url="s3://bucket"
+    )
     assert uri == "s3://bucket/file_b.tif"
     assert band == 2
 
 
 def test_resolve_uri_single_band_missing_timestep(minimal_lookup_data):
     with pytest.raises(ValueError):
-        resolve_uri_single_band(minimal_lookup_data, "ppt", "9999", base_url="s3://bucket")
+        resolve_uri_single_band(
+            minimal_lookup_data, "ppt", "9999", base_url="s3://bucket"
+        )
 
 
 def test_resolve_uri_single_band_missing_variable(minimal_lookup_data):
     with pytest.raises(ValueError):
-        resolve_uri_single_band(minimal_lookup_data, "bogus", "0100", base_url="s3://bucket")
+        resolve_uri_single_band(
+            minimal_lookup_data, "bogus", "0100", base_url="s3://bucket"
+        )

@@ -1,6 +1,14 @@
 import uuid
 import logging
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query, Request
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+)
 from fastapi.responses import StreamingResponse
 
 from app.config import get_settings
@@ -21,12 +29,14 @@ settings = get_settings()
 
 router = APIRouter()
 
+
 # Metadata
 @router.get("/metadata")
 async def get_global_index(request: Request):
     """Returns the Global Registry."""
     registry_dict = request.app.state.global_registry
     return list(registry_dict.values())
+
 
 # Tile streaming
 @router.get("/tiles/{dataset_id}/{variable_id}/{year}/{z}/{x}/{y}")
@@ -58,9 +68,9 @@ async def get_map_tile(
         logger.warning(f"Invalid request attempt: {e}")
         raise HTTPException(status_code=404, detail=str(e))
 
-
     variable = next(
-        var for var in registry[dataset_id].get("variables", [])
+        var
+        for var in registry[dataset_id].get("variables", [])
         if var.get("id") == variable_id
     )
     requested_colormap = colormap.strip() if colormap else ""
@@ -70,9 +80,7 @@ async def get_map_tile(
         else requested_colormap
     )
     try:
-        effective_colormap, rescale = validate_tile_style(
-            effective_colormap, rescale
-        )
+        effective_colormap, rescale = validate_tile_style(effective_colormap, rescale)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -85,7 +93,7 @@ async def get_map_tile(
         x=x,
         y=y,
         colormap=effective_colormap,
-        rescale=rescale
+        rescale=rescale,
     )
 
 
@@ -93,7 +101,7 @@ async def get_map_tile(
 @router.post("/timeseries/extract", status_code=202)
 async def create_timeseries_job(
     request: Request,
-    payload: TimeseriesRequest, 
+    payload: TimeseriesRequest,
     background_tasks: BackgroundTasks,
     store: JobStore = Depends(get_job_store),
     job_controller: ExtractionJobController = Depends(get_job_controller),
@@ -105,7 +113,7 @@ async def create_timeseries_job(
     except ValueError as e:
         logger.warning(f"Invalid request attempt: {e}")
         raise HTTPException(status_code=404, detail=str(e))
-    
+
     # Pre-flight geometry size check using registry CRS/transform
     dataset_entry = registry[payload.dataset_id]
     try:
@@ -140,7 +148,7 @@ async def create_timeseries_job(
     except Exception:
         job_controller.release()
         raise
-    
+
     return {"job_id": job_id, "status": "accepted"}
 
 
@@ -152,13 +160,20 @@ async def analyze_timeseries(
 ):
     extraction = await store.get_job_status(payload.extraction_id)
     if not extraction:
-        raise HTTPException(status_code=404, detail="Extraction not found. It may have expired.")
+        raise HTTPException(
+            status_code=404, detail="Extraction not found. It may have expired."
+        )
     if extraction.get("status") != "SUCCESS":
-        raise HTTPException(status_code=409, detail=f"Extraction not complete: {extraction.get('status')}")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Extraction not complete: {extraction.get('status')}",
+        )
 
     base_data = extraction.get("base_series")
     if not base_data:
-        raise HTTPException(status_code=422, detail="No base series found. Re-submit /extract.")
+        raise HTTPException(
+            status_code=422, detail="No base series found. Re-submit /extract."
+        )
 
     try:
         return execute_analyze_request(
@@ -173,8 +188,7 @@ async def analyze_timeseries(
 # 5. Timeseries job status report and results retrieval
 @router.get("/timeseries/status/{job_id}")
 async def get_job_status(
-    job_id: str = Path(...),
-    store: JobStore = Depends(get_job_store)
+    job_id: str = Path(...), store: JobStore = Depends(get_job_store)
 ):
     job = await store.get_job_status(job_id)
     if not job:

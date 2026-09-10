@@ -17,20 +17,22 @@ from shapely.geometry import box
 # directory that contains config/app_settings.yml, then switch to it so that
 # Settings() can locate its YAML file at import time.
 
+
 def _find_config_root() -> Path:
     for parent in Path(__file__).resolve().parents:
         if (parent / "config" / "app_settings.yml").exists():
             return parent
     return Path(__file__).resolve().parent  # fallback: stay put
 
+
 os.chdir(_find_config_root())
 
 from app.store.data_reader import DataReader
 from app.store.jobs import FileSystemJobStore, RedisJobStore
 
-
 # ---------------------------------------------------------------------------
 # Registry / lookup fixtures
+
 
 @pytest.fixture
 def minimal_registry():
@@ -70,6 +72,7 @@ def minimal_lookup_data():
 # ---------------------------------------------------------------------------
 # Transform / spatial fixtures
 
+
 @pytest.fixture
 def geo_transform_6():
     return [0.00833, 0.0, -115.0, 0.0, -0.00833, 43.0]
@@ -100,6 +103,7 @@ def dataset_bbox():
 # ---------------------------------------------------------------------------
 # Job store fixtures
 
+
 @pytest.fixture
 def tmp_jobs_dir(tmp_path):
     d = tmp_path / "jobs"
@@ -123,6 +127,7 @@ async def redis_job_store():
 # ---------------------------------------------------------------------------
 # Data reader mock
 
+
 @pytest.fixture
 def mock_data_reader(minimal_lookup_data):
     reader = AsyncMock(spec=DataReader)
@@ -133,14 +138,37 @@ def mock_data_reader(minimal_lookup_data):
 # ---------------------------------------------------------------------------
 # Time series fixtures
 
+
 @pytest.fixture
 def base_series():
-    index = ["0100", "0101", "0102", "0103", "0104", "0105", "0106", "0107", "0108", "0109"]
+    index = [
+        "0100",
+        "0101",
+        "0102",
+        "0103",
+        "0104",
+        "0105",
+        "0106",
+        "0107",
+        "0108",
+        "0109",
+    ]
     values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
     return pd.Series(values, index=index)
 
 
 @pytest.fixture
 def constant_series():
-    index = ["0100", "0101", "0102", "0103", "0104", "0105", "0106", "0107", "0108", "0109"]
+    index = [
+        "0100",
+        "0101",
+        "0102",
+        "0103",
+        "0104",
+        "0105",
+        "0106",
+        "0107",
+        "0108",
+        "0109",
+    ]
     return pd.Series([5.0] * 10, index=index)

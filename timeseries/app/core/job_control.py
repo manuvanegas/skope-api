@@ -24,7 +24,9 @@ class ExtractionJobController:
     def release(self) -> None:
         with self._lock:
             if self._active == 0:
-                raise RuntimeError("Extraction job slot released without being acquired.")
+                raise RuntimeError(
+                    "Extraction job slot released without being acquired."
+                )
             self._active -= 1
 
     @property
