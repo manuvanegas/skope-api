@@ -1,4 +1,5 @@
 dataset_id: prism
+trunc_to_uint16: false
 variables:
   - id: ppt
     uri: /legacy/datasets/prism/ppt/cube.tif

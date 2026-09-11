@@ -10,9 +10,14 @@ class ManifestVariable:
     uri: str
 
 
-def load_input_manifest(
-    manifest_path: str, expected_dataset_id: str
-) -> list[ManifestVariable]:
+@dataclass(frozen=True)
+class InputManifest:
+    dataset_id: str
+    trunc_to_uint16: bool
+    variables: tuple[ManifestVariable, ...]
+
+
+def load_input_manifest(manifest_path: str) -> InputManifest:
     path = Path(manifest_path)
     if not path.is_file():
         raise ValueError(f"Input manifest not found at: {manifest_path}")
@@ -24,11 +29,12 @@ def load_input_manifest(
         raise ValueError("Input manifest must be a YAML mapping.")
 
     dataset_id = content.get("dataset_id")
-    if dataset_id != expected_dataset_id:
-        raise ValueError(
-            f"Input manifest dataset_id '{dataset_id}' does not match "
-            f"DATASET_NAME '{expected_dataset_id}'."
-        )
+    if not isinstance(dataset_id, str) or not dataset_id.strip():
+        raise ValueError("Input manifest must set dataset_id.")
+
+    trunc_to_uint16 = content.get("trunc_to_uint16")
+    if not isinstance(trunc_to_uint16, bool):
+        raise ValueError("Input manifest must set trunc_to_uint16 to true or false.")
 
     variables = content.get("variables")
     if not isinstance(variables, list) or not variables:
@@ -56,32 +62,33 @@ def load_input_manifest(
         seen_ids.add(variable_id)
         parsed.append(ManifestVariable(id=variable_id, uri=uri))
 
-    return parsed
+    return InputManifest(
+        dataset_id=dataset_id,
+        trunc_to_uint16=trunc_to_uint16,
+        variables=tuple(parsed),
+    )
 
 
-def validate_manifest_metadata(
-    variables: list[ManifestVariable], dataset_metadata: dict
-) -> None:
-    manifest_ids = {variable.id for variable in variables}
-    metadata_variables = dataset_metadata.get("variables")
-    if not isinstance(metadata_variables, list):
-        raise ValueError("Dataset metadata must contain a variables list.")
+def validate_manifest_variables(
+    manifest: InputManifest, described_ids: tuple[str, ...], require_all: bool
+) -> list[str]:
+    """Checks the manifest against the variables the dataset file describes.
 
-    metadata_ids = {
-        variable.get("id")
-        for variable in metadata_variables
-        if isinstance(variable, dict) and variable.get("id")
-    }
-    missing_from_metadata = sorted(manifest_ids - metadata_ids)
-    missing_from_manifest = sorted(metadata_ids - manifest_ids)
-    if missing_from_metadata or missing_from_manifest:
-        details = []
-        if missing_from_metadata:
-            details.append(
-                "missing from metadata.yml: " + ", ".join(missing_from_metadata)
+    A manifest may process a subset of the described variables; with require_all it
+    must process every one of them.
+    """
+    manifest_ids = [variable.id for variable in manifest.variables]
+    errors = []
+
+    undescribed = [i for i in manifest_ids if i not in described_ids]
+    if undescribed:
+        errors.append(f"not described in the dataset file: {', '.join(undescribed)}")
+
+    if require_all:
+        missing = [i for i in described_ids if i not in manifest_ids]
+        if missing:
+            errors.append(
+                "described in the dataset file but missing from the input manifest "
+                f"(REQUIRE_ALL_VARIABLES is set): {', '.join(missing)}"
             )
-        if missing_from_manifest:
-            details.append(
-                "missing from input manifest: " + ", ".join(missing_from_manifest)
-            )
-        raise ValueError("Manifest/metadata variable mismatch: " + "; ".join(details))
+    return errors

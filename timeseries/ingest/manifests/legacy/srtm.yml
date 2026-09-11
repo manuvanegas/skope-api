@@ -1,4 +1,5 @@
 dataset_id: srtm
+trunc_to_uint16: false
 variables:
   - id: srtm_elevation
     uri: /legacy/datasets/srtm/srtm_elevation/cube.tif

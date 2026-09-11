@@ -9,7 +9,8 @@ tags
 # generated files
 docker-compose.yml
 timeseries/deploy/settings/config.yml
-cog-input/
+# No trailing slash, so a cog-input symlink to a data release is ignored too.
+/cog-input
 timeseries/ingest/output/
 
 

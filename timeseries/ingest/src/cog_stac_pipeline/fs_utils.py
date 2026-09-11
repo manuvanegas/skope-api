@@ -15,19 +15,6 @@ def to_vsi(path: str) -> str:
     return path.replace("s3://", "/vsis3/", 1) if is_s3(path) else path
 
 
-def list_tif_files(directory: str) -> list[str]:
-    """Lists .tif file paths in a local directory or an S3 prefix."""
-    if is_s3(directory):
-        names = gdal.ReadDir(to_vsi(directory)) or []
-        base = directory.rstrip("/")
-        return [f"{base}/{n}" for n in names if n.endswith(".tif")]
-    return [
-        os.path.join(directory, f)
-        for f in os.listdir(directory)
-        if f.endswith(".tif")
-    ]
-
-
 def path_exists(path: str) -> bool:
     """Returns True if the file exists locally or as an S3 object."""
     if is_s3(path):
@@ -39,6 +26,16 @@ def makedirs(path: str) -> None:
     """Creates local directories. No-op for S3 (S3 has no real directories)."""
     if not is_s3(path):
         os.makedirs(path, exist_ok=True)
+
+
+def read_text(path: str) -> str:
+    """Reads a local file or an S3 object as text."""
+    if is_s3(path):
+        import boto3
+        bucket, key = path[5:].split("/", 1)
+        return boto3.client("s3").get_object(Bucket=bucket, Key=key)["Body"].read().decode()
+    with open(path, encoding="utf-8") as f:
+        return f.read()
 
 
 def write_text(path: str, content: str) -> None:

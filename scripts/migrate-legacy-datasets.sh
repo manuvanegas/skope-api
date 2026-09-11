@@ -46,8 +46,10 @@ mkdir -p "$migration_scratch_root"
 legacy_data_root=$(CDPATH= cd -- "$legacy_data_root" && pwd)
 migrated_data_root=$(CDPATH= cd -- "$migrated_data_root" && pwd)
 migration_scratch_root=$(CDPATH= cd -- "$migration_scratch_root" && pwd)
-cp "$repository_root/timeseries/ingest/legacy-metadata.yml" \
-    "$migrated_data_root/_migration/metadata.yml"
+# Record the exact inputs used, as release provenance.
+cp -R "$repository_root/timeseries/ingest/manifests" \
+    "$repository_root/deploy/metadata/datasets" \
+    "$migrated_data_root/_migration/"
 
 compose() {
     docker compose \
@@ -58,42 +60,31 @@ compose() {
         "$@"
 }
 
+# Timespans come from deploy/metadata/datasets/<id>.yml and UInt16 conversion from
+# each manifest; every described variable must be migrated.
 run_dataset() {
     dataset_id=$1
     manifest_path=$2
-    start_datetime=$3
-    time_delta=$4
-    truncate_to_uint16=$5
 
     echo "Migrating $dataset_id"
     compose --profile ingest run --rm --no-deps \
-        -e "DATASET_NAME=$dataset_id" \
-        -e "DATASET_START_DATETIME=$start_datetime" \
-        -e "DATASET_TIME_DELTA=$time_delta" \
         -e "INPUT_MANIFEST_PATH=$manifest_path" \
-        -e METADATA_FILE_PATH=/migration/metadata.yml \
         -e "OUTPUT_DIR=/output/$dataset_id" \
-        -e "TRUNC_TO_UINT16=$truncate_to_uint16" \
+        -e REQUIRE_ALL_VARIABLES=true \
         -e TMPDIR=/scratch \
         -v "$legacy_data_root:/legacy:ro" \
         -v "$migrated_data_root:/output" \
-        -v "$migrated_data_root/_migration:/migration" \
         -v "$migration_scratch_root:/scratch" \
         ingest
 }
 
 compose --profile ingest build ingest
 
-run_dataset lbda_v2 /ingest/manifests/legacy/lbda_v2.yml \
-    0001-01-01T00:00:00Z '{"years": 1}' false
-run_dataset paleocar_v2 /ingest/manifests/legacy/paleocar_v2.yml \
-    0001-01-01T00:00:00Z '{"years": 1}' false
-run_dataset paleocar_v3 /ingest/manifests/paleocar_v3.yml \
-    0103-01-01T00:00:00Z '{"years": 1}' true
-run_dataset prism /ingest/manifests/legacy/prism.yml \
-    1895-01-01T00:00:00Z '{"months": 1}' false
-run_dataset srtm /ingest/manifests/legacy/srtm.yml \
-    2009-01-01T00:00:00Z '{"years": 1}' false
+run_dataset lbda_v2 /ingest/manifests/legacy/lbda_v2.yml
+run_dataset paleocar_v2 /ingest/manifests/legacy/paleocar_v2.yml
+run_dataset paleocar_v3 /ingest/manifests/paleocar_v3.yml
+run_dataset prism /ingest/manifests/legacy/prism.yml
+run_dataset srtm /ingest/manifests/legacy/srtm.yml
 
 echo "Migration complete: $migrated_data_root"
-echo "Generated metadata: $migrated_data_root/_migration/metadata.yml"
+echo "To deploy it, set 'release: $migrated_data_root' in deploy/metadata/staging.yml."

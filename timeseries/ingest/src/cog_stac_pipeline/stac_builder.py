@@ -98,6 +98,22 @@ class _S3StacIO(pystac.StacIO):
         return pystac.StacIO.default().read_text_method(source)
 
 
+def load_or_create_catalog(stac_dir, description):
+    """Loads the package's existing catalog so earlier runs' variables are kept."""
+    catalog_path = os.path.join(stac_dir, "catalog.json")
+    if fs_utils.path_exists(catalog_path):
+        stac_io = _S3StacIO() if fs_utils.is_s3(stac_dir) else None
+        return pystac.Catalog.from_file(catalog_path, stac_io=stac_io)
+    return pystac.Catalog(id="skope-catalog", description=description)
+
+
+def replace_child(catalog, collection):
+    """Adds a variable's collection, replacing one left by an earlier run."""
+    if catalog.get_child(collection.id) is not None:
+        catalog.remove_child(collection.id)
+    catalog.add_child(collection)
+
+
 def save_catalog(catalog, stac_dir):
     """Normalizes hrefs, makes all asset hrefs relative, and saves the catalog."""
     catalog.normalize_hrefs(stac_dir)

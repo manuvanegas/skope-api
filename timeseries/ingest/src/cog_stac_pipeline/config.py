@@ -1,44 +1,42 @@
-import json
 import os
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+
+REQUIRED_ENV = ("INPUT_MANIFEST_PATH", "OUTPUT_DIR")
 
 
 @dataclass(frozen=True)
 class PipelineConfig:
-    input_dir: str = "/data/skope/cog-input"
-    input_manifest_path: str | None = None
-    output_dir: str | None = None
-    dataset_name: str = "paleocar_v3"
-    metadata_file_path: str = "metadata.yml"
-    trunc_to_uint16: bool = True
+    input_manifest_path: str
+    output_dir: str
+    dataset_metadata_dir: str = "datasets"
     max_bands_per_slice: int = 100
-    dataset_start_datetime: datetime = datetime(103, 1, 1, tzinfo=timezone.utc)
-    dataset_time_delta: dict[str, int] = field(default_factory=lambda: {"years": 1})
+    require_all_variables: bool = False
+    preflight_only: bool = False
 
     @classmethod
     def from_env(cls) -> "PipelineConfig":
+        missing = [name for name in REQUIRED_ENV if not os.environ.get(name)]
+        if missing:
+            raise ValueError(
+                f"Required environment variables are not set: {', '.join(missing)}"
+            )
         return cls(
-            input_dir=os.environ.get("INPUT_DIR", cls.input_dir),
-            input_manifest_path=os.environ.get("INPUT_MANIFEST_PATH"),
-            output_dir=os.environ.get("OUTPUT_DIR"),
-            dataset_name=os.environ.get("DATASET_NAME", cls.dataset_name),
-            metadata_file_path=os.environ.get(
-                "METADATA_FILE_PATH", cls.metadata_file_path
+            input_manifest_path=os.environ["INPUT_MANIFEST_PATH"],
+            output_dir=os.environ["OUTPUT_DIR"],
+            dataset_metadata_dir=os.environ.get(
+                "DATASET_METADATA_DIR", cls.dataset_metadata_dir
             ),
-            trunc_to_uint16=_env_bool("TRUNC_TO_UINT16", cls.trunc_to_uint16),
             max_bands_per_slice=int(
                 os.environ.get("MAX_BANDS_PER_SLICE", cls.max_bands_per_slice)
             ),
-            dataset_start_datetime=_env_datetime(
-                "DATASET_START_DATETIME", cls.dataset_start_datetime
+            require_all_variables=_env_bool(
+                "REQUIRE_ALL_VARIABLES", cls.require_all_variables
             ),
-            dataset_time_delta=_env_json_dict("DATASET_TIME_DELTA", {"years": 1}),
+            preflight_only=_env_bool("PREFLIGHT_ONLY", cls.preflight_only),
         )
 
-    @property
-    def resolved_output_dir(self) -> str:
-        return self.output_dir or os.path.join(self.input_dir, self.dataset_name)
+    def dataset_file_path(self, dataset_id: str) -> str:
+        return os.path.join(self.dataset_metadata_dir, f"{dataset_id}.yml")
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -46,22 +44,3 @@ def _env_bool(name: str, default: bool) -> bool:
     if value is None:
         return default
     return value.lower() in {"1", "true", "yes", "on"}
-
-
-def _env_datetime(name: str, default: datetime) -> datetime:
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    if value.endswith("Z"):
-        value = value[:-1] + "+00:00"
-    return datetime.fromisoformat(value)
-
-
-def _env_json_dict(name: str, default: dict[str, int]) -> dict[str, int]:
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    parsed = json.loads(value)
-    if not isinstance(parsed, dict):
-        raise ValueError(f"{name} must be a JSON object.")
-    return parsed

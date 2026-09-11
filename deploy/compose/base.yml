@@ -56,23 +56,22 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.ingest
+      # Without a target, Docker builds the last stage (tests), which runs pytest.
+      target: runtime
     image: openskope/skope-api-ingest:latest
     profiles:
       - ingest
     environment:
       AWS_NO_SIGN_REQUEST: YES
       CPL_VSIL_CURL_ALLOWED_EXTENSIONS: .tif,.ovr
-      DATASET_NAME: paleocar_v3
-      DATASET_START_DATETIME: "0103-01-01T00:00:00+00:00"
-      DATASET_TIME_DELTA: '{"years": 1}'
+      DATASET_METADATA_DIR: /ingest/datasets
       GDAL_DISABLE_READDIR_ON_OPEN: EMPTY_DIR
-      INPUT_DIR: /data
       INPUT_MANIFEST_PATH: /ingest/manifests/paleocar_v3.yml
-      METADATA_FILE_PATH: /ingest/metadata.yml
       OUTPUT_DIR: /output/paleocar_v3
-      TRUNC_TO_UINT16: "true"
     volumes:
-      - ./timeseries/ingest/metadata.yml:/ingest/metadata.yml
+      # Dataset files and manifests are read-only inputs; edits apply without a rebuild.
+      - ./deploy/metadata/datasets:/ingest/datasets:ro
+      - ./timeseries/ingest/manifests:/ingest/manifests:ro
       - ./cog-input:/data
       - ./timeseries/ingest/output:/output
 

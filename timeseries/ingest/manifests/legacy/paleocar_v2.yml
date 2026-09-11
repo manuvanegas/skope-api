@@ -1,4 +1,5 @@
 dataset_id: paleocar_v2
+trunc_to_uint16: false
 variables:
   - id: gdd_may_sept
     uri: /legacy/datasets/paleocar_v2/gdd_may_sept/cube.tif

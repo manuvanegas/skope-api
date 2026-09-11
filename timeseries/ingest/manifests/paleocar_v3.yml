@@ -1,4 +1,5 @@
 dataset_id: paleocar_v3
+trunc_to_uint16: true
 variables:
   - id: gdd_cotton_annual
     uri: s3://skope/paleocar_v3/gdd_cotton_annual/prediction_scaled.tif

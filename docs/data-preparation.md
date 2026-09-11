@@ -1,9 +1,10 @@
 # Dataset Preparation Runbook
 
-This runbook prepares the dataset tree mounted at `/data` by the API and
-TiTiler. Development uses `./cog-input`; staging and production use
-`/srv/datasets`. Preparing data and deploying the API are separate operations:
-build and validate data outside the live dataset directory, then promote it.
+This runbook prepares the dataset releases mounted at `/data` by the API and
+TiTiler. Each environment mounts the release named by `release:` in
+`deploy/metadata/<environment>.yml`; development defaults to `./cog-input`.
+Preparing data and deploying the API are separate operations: build and
+validate a new release directory, then point an environment at it in a commit.
 
 The canonical processor is the containerized COG/STAC pipeline in
 `timeseries/ingest`. The older scripts in
@@ -13,12 +14,13 @@ do not generate the `lookup.json` required by the current API.
 
 ## Required dataset contract
 
-Each published dataset has this shape beneath the mounted storage root:
+Each published dataset has this shape beneath the release directory:
 
 ```text
 <storage-root>/
 └── <dataset_id>/
     ├── lookup.json
+    ├── dataset-facts.json
     ├── cogs/
     │   └── <variable_id>/
     │       └── <variable_id>_<slice>.tif
@@ -40,16 +42,24 @@ one-based band index. Its paths are relative to `<storage-root>`, for example:
 }
 ```
 
-The dataset ID and variable IDs must exactly match the registry used by the
-target environment. Keep these files aligned:
+`dataset-facts.json` holds the facts the pipeline observed in the processed data:
+`crs`, `transform`, `timespan`, and each variable's `min`, `max`, and source.
 
-- `timeseries/ingest/metadata.yml`, used to validate pipeline inputs
-- `timeseries/metadata.yml`, mounted as the development API registry
-- `deploy/metadata/staging.yml` and `deploy/metadata/prod.yml`, built into the
-  deployed API images
+The API registry is built into the image from:
 
-Do not promote output when an input filename, lookup key, or registry variable
-ID differs.
+- `deploy/metadata/datasets/<dataset_id>.yml`, which describes the dataset and
+  all of its variables, whether or not any environment publishes them. The
+  pipeline reads the variable IDs and the timespan from it and never writes it.
+- `deploy/metadata/<environment>.yml`, which names the release
+  (`release:`) and lists, explicitly, the datasets and variables the
+  environment publishes.
+- The `dataset-facts.json` of each published dataset in that release, which
+  `make` copies into the build.
+
+The image build fails, naming the files involved, if a published variable is
+not described or has no processed data in the release, or if the described and
+processed timespans disagree. Development builds skip unprocessed data with a
+warning instead.
 
 ## Prepare PaleoCAR v3 source files
 
@@ -80,9 +90,11 @@ The checked-in manifest at
 This extends the nine groups requested in
 [`openskope/planning#40`](https://github.com/openskope/planning/issues/40) with
 the three additional groups present in the bucket. The manifest is the
-operational source map; `timeseries/ingest/metadata.yml` is the descriptive
-dataset record. Their dataset ID and complete variable-ID set must match
-exactly. The pipeline verifies that relationship before it opens any raster.
+operational source map; `deploy/metadata/datasets/paleocar_v3.yml` describes
+the dataset. A manifest may list any subset of the described variables, so a
+package can be built over several runs; the legacy migration requires all of
+them. The pipeline checks the manifest, the timespan, and every source's
+header before it writes anything.
 
 The default ingest profile streams these public objects directly through GDAL,
 so downloading them first is not required:
@@ -92,9 +104,9 @@ make ingest
 ```
 
 To transform existing production TIFFs instead, copy the manifest and replace
-each `uri` with the corresponding local file path. Preserve the same dataset
-and variable IDs. Point `INPUT_MANIFEST_PATH` at that file when running the
-container. Local and S3 sources may be mixed in one manifest.
+each `uri` with the corresponding local file path. Keep the dataset ID and use
+variable IDs from the dataset file. Point `INPUT_MANIFEST_PATH` at that file
+when running the container. Local and S3 sources may be mixed in one manifest.
 
 Record the selected manifest with the release. When inputs are materialized
 locally, also record SHA-256 checksums; S3 multipart ETags are not MD5 checksums:
@@ -105,20 +117,27 @@ sha256sum cog-input/*.tif
 
 ## Run the pipeline
 
-The checked-in Compose profile configures PaleoCAR v3 as annual data beginning
-in 0103 CE, loads the twelve-variable manifest, slices each input into COGs of
-at most 100 bands, converts values to UInt16, and writes output under
+The checked-in Compose profile loads the twelve-variable manifest, takes the
+annual 0103–2000 timespan from `deploy/metadata/datasets/paleocar_v3.yml`,
+slices each input into COGs of at most 100 bands, converts values to UInt16 as
+the manifest requests, and writes output under
 `timeseries/ingest/output/paleocar_v3`:
 
 ```bash
 make ingest
 ```
 
-The pipeline validates spatial and temporal metadata, creates COG slices and a
-self-contained STAC catalog, and generates `lookup.json`. Existing COG slices
-are skipped, so an interrupted run can be resumed. Remove or isolate stale
-output before intentionally changing input data or ingest parameters; skipped
-files are not rebuilt automatically.
+Before writing anything, the pipeline reads each source's header and checks its
+band count and band descriptions against the timespan, that all sources share
+one grid, and that an existing package in the output directory matches. It then
+creates COG slices and a self-contained STAC catalog and writes `lookup.json`
+and `dataset-facts.json`, updating only the variables it processed. Add
+`-e PREFLIGHT_ONLY=true` to a manual container run to stop after the checks.
+
+Existing COG slices are skipped, so a run interrupted between slices resumes
+where it stopped; delete a slice that was being written when a run stopped.
+Remove or isolate stale output before intentionally changing input data or
+ingest parameters; skipped files are not rebuilt automatically.
 
 ## Validate generated output
 
@@ -141,8 +160,9 @@ Also verify that:
 4. `gdalinfo` reports the expected CRS, transform, extent, data type, nodata
    value, tiling, compression, and band count for representative first and last
    slices.
-5. Metadata changes made by the pipeline are reviewed and deliberately copied
-   into all applicable API registries.
+5. `dataset-facts.json` reports plausible values, and every variable that the target
+   environment selects in `deploy/metadata/<environment>.yml` appears in both
+   `lookup.json` and `dataset-facts.json`.
 
 For an end-to-end development check, copy the generated dataset package—not
 the raw source TIFFs—into the local storage root, deploy development, and test
@@ -160,29 +180,23 @@ Promotion must preserve the validated directory exactly. Record the source
 commit, pipeline configuration, source URLs, SHA-256 checksums, output size,
 and processing date with the release.
 
-1. Assemble all generated `<dataset_id>` directories into one immutable release
-   root such as `/srv/dataset-releases/<release>`. Do not mix dataset directories
-   from different releases in the live mount.
-2. Repeat the lookup, COG, STAC, and `gdalinfo` checks against that complete root.
-3. Retain the current release directory as the rollback copy.
-4. Deploy staging with
-   `make deploy-staging DATASET_RELEASE_ROOT=/srv/dataset-releases/<release>`.
-5. Deploy the matching API registry using the
+1. Assemble all generated `<dataset_id>` directories into one new release
+   directory such as `/srv/dataset-releases/<release>`. Never modify a release
+   once a commit names it; create a new one instead.
+2. Repeat the lookup, COG, STAC, and `gdalinfo` checks against that complete
+   directory.
+3. In a reviewed commit, set `release:` in `deploy/metadata/staging.yml` to that
+   directory, adjusting the published datasets and variables if needed.
+4. Deploy that commit with `make deploy-staging` as described in the
    [deployment runbook](deployment.md), then test metadata, a representative
    tile, and a small extraction through the public hostname.
-6. Promote the same validated artifact to production; do not rerun the pipeline
+5. Promote the same validated release to production by setting `release:` in
+   `deploy/metadata/prod.yml` to the same directory; do not rerun the pipeline
    independently for production.
 
-If verification fails, redeploy the previous release root and matching API
-commit. Dataset files and API registry versions must be rolled back together.
-
-After staging passes, a host-managed
-`/srv/dataset-releases/current` symlink may be switched to the validated
-version and used by the canonical deploy command. Docker resolves bind-mount
-symlinks when containers are created, so switching the symlink alone does not
-change running containers: run the deployment target to recreate them. An
-explicit versioned `DATASET_RELEASE_ROOT` is preferred during testing because
-the running selection is unambiguous.
+If verification fails, redeploy the previous commit: it names the previous
+release, so the data and the registry roll back together. Keep previous release
+directories until no deployable commit names them.
 
 Exact host copy and atomic-switch commands are intentionally delegated to
 `comses/infrastructure`; this repository does not define filesystem ownership,
@@ -203,14 +217,22 @@ make migrate-legacy-data \
 The target reads legacy data without modifying it and refuses to use a
 non-empty output directory. It transforms legacy cubes for LBDA v2, PaleoCAR
 v2, PRISM, and SRTM, and builds the twelve-variable PaleoCAR v3 package from
-the public S3 manifest. Output packages and the metadata populated with
-observed raster properties are written beneath `MIGRATED_DATA_ROOT`. Large
-temporary TIFFs are written to the host-backed `MIGRATION_SCRATCH_ROOT` rather
-than Docker's container storage.
+the public S3 manifest. Each dataset's timespan comes from its file in
+`deploy/metadata/datasets/`, and every described variable must be migrated.
+Output packages, each with its `dataset-facts.json`, are written beneath
+`MIGRATED_DATA_ROOT`. Large temporary TIFFs are written to the host-backed
+`MIGRATION_SCRATCH_ROOT` rather than Docker's container storage.
 
-PRISM is migrated for completeness but is not currently published by the API
-registry. Review and add its generated metadata deliberately before exposing
-it. Validate the complete generated root using the checks above, then mount
-that exact directory in staging with `DATASET_RELEASE_ROOT`. The `_migration`
-directory is release provenance and is ignored by the API; dataset packages
-remain at the release root as required by `/data/<dataset_id>/lookup.json`.
+The pipeline's preflight compares each legacy cube's band count with the
+timespan in its dataset file and stops before writing anything if they
+disagree. The legacy LBDA script read year `N` from band `N + 1`, so a count
+mismatch there points at the cube starting at year 0 rather than at a
+pipeline fault.
+
+PRISM is migrated for completeness but is not published by any environment.
+Expand `deploy/metadata/datasets/prism.yml` and select it in an environment
+file before exposing it. Validate the complete generated directory using the
+checks above, then set `release:` in `deploy/metadata/staging.yml` to that
+exact directory. The `_migration` directory records the manifests and dataset
+files used and is ignored by the API; dataset packages remain at the release
+root as required by `/data/<dataset_id>/lookup.json`.

@@ -1,4 +1,5 @@
 dataset_id: lbda_v2
+trunc_to_uint16: false
 variables:
   - id: pmdi
     uri: /legacy/datasets/lbda_v2/pmdi/cube.tif

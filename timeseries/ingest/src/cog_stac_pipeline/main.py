@@ -1,103 +1,133 @@
-import os
 import json
-import yaml
-import pystac
+import os
+
 from osgeo import gdal
 
+from . import fs_utils, package, stac_builder
 from .config import PipelineConfig
-from . import fs_utils, metadata, stac_builder
-from .datetime_utils import singular_to_plural_for_relativedelta
-from .manifest import (
-    ManifestVariable,
-    load_input_manifest,
-    validate_manifest_metadata,
-)
+from .dataset_metadata import DatasetSpec, load_dataset_spec
+from .manifest import load_input_manifest, validate_manifest_variables
+from .preflight import SourceInfo, inspect_source, validate_sources
+
+
+class PreflightError(ValueError):
+    """Raised with every problem found before any output is written."""
 
 
 def run_pipeline(config: PipelineConfig) -> None:
     configure_gdal()
-    dataset_time_delta = singular_to_plural_for_relativedelta(config.dataset_time_delta)
+    manifest = load_input_manifest(config.input_manifest_path)
+    dataset_id = manifest.dataset_id
+    spec = load_dataset_spec(config.dataset_file_path(dataset_id), dataset_id)
 
-    yaml_content, ds_meta = metadata.load_and_verify_metadata(config.metadata_file_path, config.dataset_name)
-    any_metadata_updated = metadata.validate_else_add_timespan(
-        ds_meta, config.dataset_start_datetime, dataset_time_delta
+    output_dir = config.output_dir.rstrip("/")
+    lookup_path = os.path.join(output_dir, "lookup.json")
+    facts_path = os.path.join(output_dir, "dataset-facts.json")
+
+    errors = []
+    if os.path.basename(output_dir) != dataset_id:
+        errors.append(
+            f"OUTPUT_DIR must end in the dataset ID '{dataset_id}', because "
+            f"lookup.json paths start with it: {config.output_dir}"
+        )
+    errors.extend(
+        validate_manifest_variables(
+            manifest, spec.variable_ids, config.require_all_variables
+        )
     )
+    sources = [inspect_source(variable) for variable in manifest.variables]
+    errors.extend(validate_sources(spec, sources))
+    previous_facts = package.read_json(facts_path)
+    if previous_facts is not None:
+        errors.extend(package.facts_conflicts(previous_facts, spec, sources[0]))
+    if errors:
+        details = "\n".join(f"  - {error}" for error in errors)
+        raise PreflightError(f"Preflight failed for {dataset_id}:\n{details}")
 
-    input_variables = resolve_input_variables(config)
-    if config.input_manifest_path:
-        validate_manifest_metadata(input_variables, ds_meta)
+    print_plan(spec, sources, output_dir, previous_facts)
+    if config.preflight_only:
+        print("\nPREFLIGHT_ONLY is set; nothing was written.")
+        return
 
-    output_dir = config.resolved_output_dir
     root_cogs_dir = os.path.join(output_dir, "cogs")
     stac_dir = os.path.join(output_dir, "stac")
     fs_utils.makedirs(root_cogs_dir)
     fs_utils.makedirs(stac_dir)
 
-    catalog = pystac.Catalog(
-        id="skope-catalog",
-        description=ds_meta.get("description", f"STAC Catalog for {config.dataset_name} dataset."),
+    catalog = stac_builder.load_or_create_catalog(
+        stac_dir, f"STAC catalog for the {dataset_id} dataset."
     )
-    lookup_dict = {}
+    lookup_updates = {}
+    variable_facts = {}
 
-    for input_variable in input_variables:
-        input_path = input_variable.uri
-        var_name = input_variable.id
-        print(f"\nProcessing variable: {var_name}")
-
-        cogs_var_dir = os.path.join(root_cogs_dir, var_name)
-        partial_path_base = os.path.join(config.dataset_name, "cogs", var_name)
+    for variable in manifest.variables:
+        print(f"\nProcessing variable: {variable.id}")
+        cogs_var_dir = os.path.join(root_cogs_dir, variable.id)
         fs_utils.makedirs(cogs_var_dir)
 
-        collection = stac_builder.build_collection(var_name, config.dataset_start_datetime)
-
+        collection = stac_builder.build_collection(variable.id, spec.start)
         stac_builder.process_variable(
             paths=stac_builder.VariablePaths(
-                input_path=input_path,
+                input_path=variable.uri,
                 cogs_var_dir=cogs_var_dir,
-                partial_path_base=partial_path_base,
-                var_name=var_name,
+                partial_path_base=os.path.join(dataset_id, "cogs", variable.id),
+                var_name=variable.id,
             ),
             stac_collection=collection,
-            lookup_dict=lookup_dict,
+            lookup_dict=lookup_updates,
             window=config.max_bands_per_slice,
-            trunc=config.trunc_to_uint16,
-            start_dt=config.dataset_start_datetime,
-            time_delta=dataset_time_delta,
+            trunc=manifest.trunc_to_uint16,
+            start_dt=spec.start,
+            time_delta=spec.step_delta,
         )
-
-        updated_extracted = metadata.validate_else_add_extracted_info(ds_meta, var_name, collection.extra_fields)
-        any_metadata_updated = any_metadata_updated or updated_extracted
-
         collection.update_extent_from_items()
-        catalog.add_child(collection)
+        stac_builder.replace_child(catalog, collection)
+        variable_facts[variable.id] = {
+            "min": float(collection.extra_fields["titiler:min"]),
+            "max": float(collection.extra_fields["titiler:max"]),
+            "source": variable.uri,
+        }
 
     print("\nSaving STAC Catalog")
     stac_builder.save_catalog(catalog, stac_dir)
 
     print("Saving lookup dictionary")
-    lookup_file_path = os.path.join(output_dir, "lookup.json")
-    fs_utils.write_text(lookup_file_path, json.dumps(lookup_dict, indent=2))
+    lookup = package.merge_variables(package.read_json(lookup_path), lookup_updates)
+    fs_utils.write_text(lookup_path, json.dumps(lookup, indent=2))
 
-    if any_metadata_updated:
-        print(f"Saving updated metadata back to {config.metadata_file_path}")
-        with open(config.metadata_file_path, "w") as f:
-            yaml.dump(yaml_content, f, default_flow_style=False, sort_keys=False)
+    print("Saving observed dataset facts")
+    facts = package.build_facts(spec, sources[0], previous_facts, variable_facts)
+    fs_utils.write_text(facts_path, json.dumps(facts, indent=2) + "\n")
 
     print("\nDone!")
     print(f"  STAC catalog: {stac_dir}")
     print(f"  COG slices:   {root_cogs_dir}")
-    print(f"  Lookup dict:  {lookup_file_path}")
+    print(f"  Lookup dict:  {lookup_path}")
+    print(f"  Facts:        {facts_path}")
+    print(
+        "To publish, place this package in a data release and set `release:` in "
+        "deploy/metadata/<environment>.yml to that release."
+    )
 
 
-def resolve_input_variables(config: PipelineConfig) -> list[ManifestVariable]:
-    if config.input_manifest_path:
-        return load_input_manifest(config.input_manifest_path, config.dataset_name)
-
-    return [
-        ManifestVariable(id=os.path.basename(path).split(".")[0], uri=path)
-        for path in fs_utils.list_tif_files(config.input_dir)
-        if not path.endswith("_cogd.tif")
-    ]
+def print_plan(
+    spec: DatasetSpec,
+    sources: list[SourceInfo],
+    output_dir: str,
+    previous_facts: dict | None,
+) -> None:
+    resolution = spec.time_delta or "single timestep"
+    print(
+        f"Preflight passed for {spec.dataset_id}: {spec.gte} to {spec.lte} "
+        f"({resolution}), {spec.expected_band_count} timesteps"
+    )
+    for source in sources:
+        print(
+            f"  {source.variable_id}: {source.band_count} bands, {source.crs} "
+            f"<- {source.uri}"
+        )
+    state = "updating existing package" if previous_facts else "new package"
+    print(f"Output: {output_dir} ({state})")
 
 
 def configure_gdal() -> None:
