@@ -1,4 +1,5 @@
 import pytest
+import yaml
 
 from cog_stac_pipeline.manifest import (
     ManifestVariable,
@@ -94,3 +95,18 @@ def test_validate_manifest_metadata_reports_both_sides_of_mismatch():
             variables,
             {"variables": [{"id": "ppt"}, {"id": "metadata_only"}]},
         )
+
+
+@pytest.mark.parametrize(
+    "dataset_id",
+    ["lbda_v2", "paleocar_v2", "paleocar_v3", "prism", "srtm"],
+)
+def test_checked_in_manifests_match_migration_metadata(dataset_id):
+    manifest_subdir = "" if dataset_id == "paleocar_v3" else "legacy/"
+    manifest_path = f"manifests/{manifest_subdir}{dataset_id}.yml"
+    metadata = yaml.safe_load(open("legacy-metadata.yml", encoding="utf-8"))
+    dataset_metadata = next(item for item in metadata if item["id"] == dataset_id)
+
+    variables = load_input_manifest(manifest_path, dataset_id)
+
+    validate_manifest_metadata(variables, dataset_metadata)

@@ -12,6 +12,7 @@ COPY timeseries/ingest/pyproject.toml timeseries/ingest/uv.lock ./
 COPY timeseries/ingest/src ./src
 COPY timeseries/ingest/README.md ./
 COPY timeseries/ingest/metadata.yml ./metadata.yml
+COPY timeseries/ingest/legacy-metadata.yml ./legacy-metadata.yml
 COPY timeseries/ingest/manifests ./manifests
 
 RUN uv export --format requirements.txt --no-dev --no-emit-project --locked --no-hashes --output-file requirements.lock && \
