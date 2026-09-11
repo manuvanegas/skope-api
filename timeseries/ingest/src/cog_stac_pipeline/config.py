@@ -12,6 +12,7 @@ class PipelineConfig:
     dataset_name: str = "paleocar_v3"
     metadata_file_path: str = "metadata.yml"
     trunc_to_uint16: bool = True
+    preflight_only: bool = False
     max_bands_per_slice: int = 100
     dataset_start_datetime: datetime = datetime(103, 1, 1, tzinfo=timezone.utc)
     dataset_time_delta: dict[str, int] = field(default_factory=lambda: {"years": 1})
@@ -27,6 +28,7 @@ class PipelineConfig:
                 "METADATA_FILE_PATH", cls.metadata_file_path
             ),
             trunc_to_uint16=_env_bool("TRUNC_TO_UINT16", cls.trunc_to_uint16),
+            preflight_only=_env_bool("PREFLIGHT_ONLY", cls.preflight_only),
             max_bands_per_slice=int(
                 os.environ.get("MAX_BANDS_PER_SLICE", cls.max_bands_per_slice)
             ),

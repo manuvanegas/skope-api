@@ -83,6 +83,7 @@ Configuration is read from environment variables by `PipelineConfig.from_env()`:
 | `DATASET_NAME` | Dataset ID — must match an entry in `metadata.yml` |
 | `METADATA_FILE_PATH` | Path to the shared YAML metadata file |
 | `TRUNC_TO_UINT16` | Cast values to UInt16 and set nodata=65535 (reduces file size for integer datasets) |
+| `PREFLIGHT_ONLY` | Validate manifests and band-derived temporal coverage without creating output |
 | `MAX_BANDS_PER_SLICE` | Maximum number of time bands per COG slice |
 | `DATASET_START_DATETIME` | ISO datetime of the first band in the source GeoTiff |
 | `DATASET_TIME_DELTA` | JSON object with `dateutil.relativedelta` keys (e.g. `{"years": 1}`) |
@@ -130,7 +131,7 @@ COG files are skipped if they already exist on disk, so the pipeline is safe to 
 
 The pipeline reads from and optionally writes to a shared `metadata.yml` (default: in the working directory, but configurable via `metadata_file_path`). Each dataset entry must have an `id` matching `dataset_name` and a `variables` list with an entry for each variable found in `input_dir`.
 
-The pipeline will **add** missing fields (`crs`, `transform`, `timespan.period.gte`, `timespan.resolution`, `variables[*].min`, `variables[*].max`) and **raise an error** if any existing field conflicts with what it finds in the data.
+The pipeline will **add** missing fields (`crs`, `transform`, `timespan.period.gte`, `timespan.period.lte`, `timespan.resolution`, `variables[*].min`, `variables[*].max`) and **raise an error** if any existing field conflicts with what it finds in the data. Temporal endpoint validation uses each source raster's band count and runs before output directories are created.
 
 When an input manifest is used, its `dataset_id` must match `DATASET_NAME` and
 its variable IDs must exactly equal the IDs in the selected metadata dataset.

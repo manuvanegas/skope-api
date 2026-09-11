@@ -59,6 +59,61 @@ def validate_else_add_timespan(ds_meta, start_dt, time_delta):
     return updated
 
 
+def validate_else_add_temporal_end(
+    ds_meta, dataset_name, band_counts, start_dt, time_delta
+):
+    """Validate each variable's band-derived endpoint against metadata."""
+    period = ds_meta.setdefault("timespan", {}).setdefault("period", {})
+    declared_end = period.get("lte")
+    step = relativedelta(**time_delta)
+    coverage = {
+        variable_id: (
+            band_count,
+            get_iso_key(start_dt + step * (band_count - 1), time_delta),
+        )
+        for variable_id, band_count in band_counts.items()
+    }
+
+    derived_ends = {derived_end for _, derived_end in coverage.values()}
+    if len(derived_ends) != 1:
+        details = "; ".join(
+            _temporal_coverage_detail(
+                dataset_name, variable_id, band_count, derived_end, declared_end
+            )
+            for variable_id, (band_count, derived_end) in coverage.items()
+        )
+        raise ValueError(f"Inconsistent temporal coverage: {details}")
+
+    derived_end = next(iter(derived_ends))
+    if declared_end is None:
+        print(f"Metadata missing end time (lte). Adding derived end time: {derived_end}")
+        period["lte"] = derived_end
+        return True
+
+    mismatches = [
+        _temporal_coverage_detail(
+            dataset_name, variable_id, band_count, variable_end, declared_end
+        )
+        for variable_id, (band_count, variable_end) in coverage.items()
+        if variable_end != str(declared_end)
+    ]
+    if mismatches:
+        raise ValueError("Temporal endpoint mismatch: " + "; ".join(mismatches))
+
+    return False
+
+
+def _temporal_coverage_detail(
+    dataset_name, variable_id, band_count, derived_end, declared_end
+):
+    declared = "<missing>" if declared_end is None else str(declared_end)
+    return (
+        f"dataset '{dataset_name}', variable '{variable_id}', "
+        f"band count {band_count}, derived endpoint '{derived_end}', "
+        f"declared endpoint '{declared}'"
+    )
+
+
 def validate_else_add_extracted_info(ds_meta, var_name, c_extra):
     """Validates actual data extracted from the COG against metadata, adding if missing."""
     updated = False

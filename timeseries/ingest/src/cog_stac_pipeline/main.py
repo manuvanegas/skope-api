@@ -27,6 +27,19 @@ def run_pipeline(config: PipelineConfig) -> None:
     if config.input_manifest_path:
         validate_manifest_metadata(input_variables, ds_meta)
 
+    band_counts = read_input_band_counts(input_variables, config.dataset_name)
+    any_metadata_updated = metadata.validate_else_add_temporal_end(
+        ds_meta,
+        config.dataset_name,
+        band_counts,
+        config.dataset_start_datetime,
+        dataset_time_delta,
+    ) or any_metadata_updated
+
+    if config.preflight_only:
+        print(f"Preflight passed for dataset: {config.dataset_name}")
+        return
+
     output_dir = config.resolved_output_dir
     root_cogs_dir = os.path.join(output_dir, "cogs")
     stac_dir = os.path.join(output_dir, "stac")
@@ -98,6 +111,33 @@ def resolve_input_variables(config: PipelineConfig) -> list[ManifestVariable]:
         for path in fs_utils.list_tif_files(config.input_dir)
         if not path.endswith("_cogd.tif")
     ]
+
+
+def read_input_band_counts(
+    input_variables: list[ManifestVariable], dataset_name: str
+) -> dict[str, int]:
+    """Read raster band counts before the pipeline creates any output."""
+    band_counts = {}
+    for variable in input_variables:
+        try:
+            with gdal.Open(fs_utils.to_vsi(variable.uri)) as dataset:
+                if dataset is None:
+                    raise RuntimeError("GDAL returned no dataset")
+                band_count = dataset.RasterCount
+        except Exception as exc:
+            raise ValueError(
+                f"Cannot inspect raster for dataset '{dataset_name}', variable "
+                f"'{variable.id}': {variable.uri}: {exc}"
+            ) from exc
+
+        if band_count < 1:
+            raise ValueError(
+                f"Raster for dataset '{dataset_name}', variable '{variable.id}' "
+                f"has invalid band count {band_count}: {variable.uri}"
+            )
+        band_counts[variable.id] = band_count
+
+    return band_counts
 
 
 def configure_gdal() -> None:
