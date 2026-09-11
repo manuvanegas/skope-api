@@ -200,6 +200,13 @@ make migrate-legacy-data \
   MIGRATION_SCRATCH_ROOT=/srv/dataset-migration-scratch/<release>
 ```
 
+While staging or reviewing the source data, run the same checks without
+creating output:
+
+```bash
+make preflight-legacy-data LEGACY_DATA_ROOT=/srv/datasets/skope
+```
+
 The target reads legacy data without modifying it and refuses to use a
 non-empty output directory. It transforms legacy cubes for LBDA v2, PaleoCAR
 v2, PRISM, and SRTM, and builds the twelve-variable PaleoCAR v3 package from
@@ -207,6 +214,11 @@ the public S3 manifest. Output packages and the metadata populated with
 observed raster properties are written beneath `MIGRATED_DATA_ROOT`. Large
 temporary TIFFs are written to the host-backed `MIGRATION_SCRATCH_ROOT` rather
 than Docker's container storage.
+
+Before creating the output or scratch directories, the migration opens every
+source in metadata-only mode and verifies that its band-derived temporal end
+matches the declared dataset period. Transformation starts only after all
+legacy and S3 inputs pass this preflight.
 
 PRISM is migrated for completeness but is not currently published by the API
 registry. Review and add its generated metadata deliberately before exposing

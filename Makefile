@@ -15,7 +15,7 @@ TEST_COMPOSE = docker compose --project-name $(COMPOSE_PROJECT_NAME)-test \
 
 .PHONY: help check-environment check-dataset-release prepare config build deploy \
 	deploy-dev deploy-staging deploy-production down restart logs ps ingest \
-	migrate-legacy-data test test-api test-ingest
+	preflight-legacy-data migrate-legacy-data test test-api test-ingest
 
 # Make 'help' the default target if someone just types `make`
 .DEFAULT_GOAL := help
@@ -81,7 +81,13 @@ ingest: prepare ##- Build and run the local COG/STAC ingest pipeline container
 	$(COMPOSE) --profile ingest build ingest
 	$(COMPOSE) --profile ingest run --rm ingest
 
-migrate-legacy-data: ##- Transform legacy cubes into COG/STAC/lookup dataset packages
+preflight-legacy-data: ##- Validate all legacy migration inputs without creating output
+	MIGRATION_PREFLIGHT_ONLY=true ./scripts/migrate-legacy-datasets.sh \
+		"$(LEGACY_DATA_ROOT)" \
+		"$(MIGRATED_DATA_ROOT)" \
+		"$(MIGRATION_SCRATCH_ROOT)"
+
+migrate-legacy-data: ##- Preflight and transform legacy cubes into dataset packages
 	./scripts/migrate-legacy-datasets.sh \
 		"$(LEGACY_DATA_ROOT)" \
 		"$(MIGRATED_DATA_ROOT)" \
