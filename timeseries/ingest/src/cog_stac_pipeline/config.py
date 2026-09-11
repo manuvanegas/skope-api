@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 @dataclass(frozen=True)
 class PipelineConfig:
     input_dir: str = "/data/skope/cog-input"
+    input_manifest_path: str | None = None
     output_dir: str | None = None
     dataset_name: str = "paleocar_v3"
     metadata_file_path: str = "metadata.yml"
@@ -19,6 +20,7 @@ class PipelineConfig:
     def from_env(cls) -> "PipelineConfig":
         return cls(
             input_dir=os.environ.get("INPUT_DIR", cls.input_dir),
+            input_manifest_path=os.environ.get("INPUT_MANIFEST_PATH"),
             output_dir=os.environ.get("OUTPUT_DIR"),
             dataset_name=os.environ.get("DATASET_NAME", cls.dataset_name),
             metadata_file_path=os.environ.get(

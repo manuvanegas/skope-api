@@ -7,6 +7,11 @@ from osgeo import gdal
 from .config import PipelineConfig
 from . import fs_utils, metadata, stac_builder
 from .datetime_utils import singular_to_plural_for_relativedelta
+from .manifest import (
+    ManifestVariable,
+    load_input_manifest,
+    validate_manifest_metadata,
+)
 
 
 def run_pipeline(config: PipelineConfig) -> None:
@@ -18,9 +23,9 @@ def run_pipeline(config: PipelineConfig) -> None:
         ds_meta, config.dataset_start_datetime, dataset_time_delta
     )
 
-    input_paths = [
-        p for p in fs_utils.list_tif_files(config.input_dir) if not p.endswith("_cogd.tif")
-    ]
+    input_variables = resolve_input_variables(config)
+    if config.input_manifest_path:
+        validate_manifest_metadata(input_variables, ds_meta)
 
     output_dir = config.resolved_output_dir
     root_cogs_dir = os.path.join(output_dir, "cogs")
@@ -34,8 +39,9 @@ def run_pipeline(config: PipelineConfig) -> None:
     )
     lookup_dict = {}
 
-    for input_path in input_paths:
-        var_name = os.path.basename(input_path).split(".")[0]
+    for input_variable in input_variables:
+        input_path = input_variable.uri
+        var_name = input_variable.id
         print(f"\nProcessing variable: {var_name}")
 
         cogs_var_dir = os.path.join(root_cogs_dir, var_name)
@@ -81,6 +87,17 @@ def run_pipeline(config: PipelineConfig) -> None:
     print(f"  STAC catalog: {stac_dir}")
     print(f"  COG slices:   {root_cogs_dir}")
     print(f"  Lookup dict:  {lookup_file_path}")
+
+
+def resolve_input_variables(config: PipelineConfig) -> list[ManifestVariable]:
+    if config.input_manifest_path:
+        return load_input_manifest(config.input_manifest_path, config.dataset_name)
+
+    return [
+        ManifestVariable(id=os.path.basename(path).split(".")[0], uri=path)
+        for path in fs_utils.list_tif_files(config.input_dir)
+        if not path.endswith("_cogd.tif")
+    ]
 
 
 def configure_gdal() -> None:

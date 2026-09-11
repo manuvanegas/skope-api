@@ -5,6 +5,7 @@ from cog_stac_pipeline.config import PipelineConfig
 
 def test_pipeline_config_from_env(monkeypatch):
     monkeypatch.setenv("INPUT_DIR", "/data/input")
+    monkeypatch.setenv("INPUT_MANIFEST_PATH", "/manifests/input.yml")
     monkeypatch.setenv("OUTPUT_DIR", "/tmp/output")
     monkeypatch.setenv("DATASET_NAME", "test-dataset")
     monkeypatch.setenv("METADATA_FILE_PATH", "/metadata.yml")
@@ -16,6 +17,7 @@ def test_pipeline_config_from_env(monkeypatch):
     config = PipelineConfig.from_env()
 
     assert config.input_dir == "/data/input"
+    assert config.input_manifest_path == "/manifests/input.yml"
     assert config.output_dir == "/tmp/output"
     assert config.resolved_output_dir == "/tmp/output"
     assert config.dataset_name == "test-dataset"

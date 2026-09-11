@@ -78,6 +78,7 @@ Configuration is read from environment variables by `PipelineConfig.from_env()`:
 | Environment variable | Description |
 |---|---|
 | `INPUT_DIR` | Directory containing the source `.tif` files |
+| `INPUT_MANIFEST_PATH` | Optional local YAML manifest mapping variable IDs to local or `s3://` TIFF URIs; when set, it replaces `INPUT_DIR` discovery |
 | `OUTPUT_DIR` | Directory where `cogs/`, `stac/`, and `lookup.json` are written. Defaults to `<INPUT_DIR>/<DATASET_NAME>` |
 | `DATASET_NAME` | Dataset ID — must match an entry in `metadata.yml` |
 | `METADATA_FILE_PATH` | Path to the shared YAML metadata file |
@@ -85,6 +86,22 @@ Configuration is read from environment variables by `PipelineConfig.from_env()`:
 | `MAX_BANDS_PER_SLICE` | Maximum number of time bands per COG slice |
 | `DATASET_START_DATETIME` | ISO datetime of the first band in the source GeoTiff |
 | `DATASET_TIME_DELTA` | JSON object with `dateutil.relativedelta` keys (e.g. `{"years": 1}`) |
+
+An input manifest is a YAML mapping with one explicit source TIFF per variable:
+
+```yaml
+dataset_id: paleocar_v3
+variables:
+  - id: ppt_annual
+    uri: s3://skope/paleocar_v3/ppt_annual/prediction_scaled.tif
+  - id: gdd_cotton_annual
+    uri: /srv/datasets-import/paleocar_v3/gdd_cotton_annual/cube.tif
+```
+
+The URI may be a local path or an `s3://` object. The ID, rather than the source
+filename, becomes the lookup key, COG directory name, and STAC collection ID.
+This permits nested S3 sources and local production files to participate in one
+coherent dataset build.
 
 ## Running
 
@@ -114,6 +131,10 @@ COG files are skipped if they already exist on disk, so the pipeline is safe to 
 The pipeline reads from and optionally writes to a shared `metadata.yml` (default: in the working directory, but configurable via `metadata_file_path`). Each dataset entry must have an `id` matching `dataset_name` and a `variables` list with an entry for each variable found in `input_dir`.
 
 The pipeline will **add** missing fields (`crs`, `transform`, `timespan.period.gte`, `timespan.resolution`, `variables[*].min`, `variables[*].max`) and **raise an error** if any existing field conflicts with what it finds in the data.
+
+When an input manifest is used, its `dataset_id` must match `DATASET_NAME` and
+its variable IDs must exactly equal the IDs in the selected metadata dataset.
+The pipeline checks this contract before opening any source rasters.
 
 **Minimal required structure before first run:**
 ```yaml
