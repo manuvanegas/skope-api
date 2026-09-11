@@ -21,6 +21,12 @@ whole-migration preflight before transformation. Both bodies of work expose the
 need for an explicit authority model, byte validation, and transactional release
 publication.
 
+Review of the initial proposal identified three additional boundaries that the
+architecture must make explicit: temporal assets need a standard band-to-time
+mapping from which `lookup.json` is reproducible; planned output properties must
+not be confused with observations of final bytes; and static rasters must not
+be forced through temporal-cube requirements.
+
 STAC 1.1.0 and its Projection, File Info, Scientific Citation, Raster,
 Datacube, Versioning, and Processing extensions provide standards-based homes
 for most published metadata. COG headers remain the direct description of the
@@ -41,6 +47,13 @@ Subject to approval of the linked specification:
   metadata.
 - Generated API metadata and `lookup.json` indexes will be derived compatibility
   artifacts.
+- Temporal lookup indexes will be derived from ordered STAC Band names checked
+  against the Collection temporal dimension and COG band descriptions.
+- The typed model will have an immutable `ValidatedBuildPlan` consumed by the
+  COG writer and a separate immutable `FinalObservation` consumed by metadata
+  serializers after byte inspection.
+- Dataset releases will declare either a temporal-cube or static-raster profile;
+  SRTM will not acquire synthetic scientific time metadata for API convenience.
 - Published releases will be immutable and selected only after a valid root
   release manifest acts as the publication commit marker.
 - `dataset-facts.json` will not be part of the target architecture.
@@ -63,12 +76,16 @@ Subject to approval of the linked specification:
 - Candidate STAC extensions require pinned versions and serialization adapters.
 - Ambiguous legacy scientific fields require human review rather than automatic
   interpretation.
+- Non-publishing experiments may gather evidence for unresolved decisions, but
+  their artifacts cannot become releases or production dependencies without
+  approval.
 - Accepted ADR 0001 remains in force during compatibility migration. A later
   accepted ADR may supersede its registry duplication consequences after the
   STAC-derived registry is proven.
 
 ## Approval gate
 
-This ADR remains Proposed. No implementation phase may begin until the linked
-specification's unresolved decisions are reviewed and this ADR is accepted or
-revised.
+This ADR remains Proposed. No production implementation phase may begin until
+the linked specification's unresolved decisions are reviewed and this ADR is
+accepted or revised. The specification's isolated, non-publishing Phase 0
+experiments may run solely to gather decision evidence.
