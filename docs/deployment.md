@@ -7,8 +7,8 @@ DNS, TLS, and the public reverse proxy are owned by `comses/infrastructure`.
 | Environment | Checkout/data location | API listener | Deploy command |
 | --- | --- | --- | --- |
 | Development | Local checkout; data in `./cog-input` | `127.0.0.1:8001` | `make deploy-dev` |
-| Staging | `/srv/apps/skope-api`; data in `/srv/datasets` | `0.0.0.0:8001` | `make deploy-staging` |
-| Production | `/srv/apps/skope-api`; data in `/srv/datasets` | `0.0.0.0:8001` | `make deploy-production` |
+| Staging | `/srv/apps/skope-api`; release selected by `DATASET_RELEASE_ROOT` | `0.0.0.0:8001` | `make deploy-staging` |
+| Production | `/srv/apps/skope-api`; release selected by `DATASET_RELEASE_ROOT` | `0.0.0.0:8001` | `make deploy-production` |
 
 ## Before deploying
 
@@ -24,7 +24,7 @@ DNS, TLS, and the public reverse proxy are owned by `comses/infrastructure`.
 
 3. If dataset metadata changed, keep `timeseries/metadata.yml` and the relevant
    `deploy/metadata/<environment>.yml` registry in sync. For staging and
-   production, confirm `/srv/datasets` is mounted and readable and that each
+   production, confirm `DATASET_RELEASE_ROOT` is readable and that each
    deployed dataset has a valid `{dataset_id}/lookup.json` with all referenced
    COGs present. Follow the [dataset preparation runbook](data-preparation.md)
    to build, validate, and promote dataset artifacts.
@@ -44,18 +44,23 @@ DNS, TLS, and the public reverse proxy are owned by `comses/infrastructure`.
 
 ## Deploy
 
-Use exactly one canonical target:
+Staging and production mount one complete, immutable dataset release into
+`/data` in both containers. `DATASET_RELEASE_ROOT` defaults to
+`/srv/dataset-releases/current` and may name either a versioned directory or a
+symlink to one. Select the release explicitly when useful for a trial deploy:
 
 ```bash
 make deploy-dev
-make deploy-staging
-make deploy-production
+make deploy-staging DATASET_RELEASE_ROOT=/srv/dataset-releases/<release>
+make deploy-production DATASET_RELEASE_ROOT=/srv/dataset-releases/<release>
 ```
 
-The target builds the selected images with refreshed base images, starts the
-Compose project, removes orphaned containers, and waits up to 120 seconds for
-the API, Redis, and TiTiler health checks. TiTiler remains on the internal
-Compose network; public tile requests pass through the API.
+The target builds the selected images with refreshed base images, recreates the
+Compose containers so a changed release symlink is resolved, removes orphaned
+containers, and waits up to 120 seconds for the API, Redis, and TiTiler health
+checks. It refuses a staging or production
+deploy when the selected release root is absent or unreadable. TiTiler remains
+on the internal Compose network; public tile requests pass through the API.
 
 ## Verify
 
@@ -82,9 +87,10 @@ make logs ENVIRONMENT=<environment>
 ## Roll back
 
 1. Record the failed commit and capture relevant logs.
-2. Restore the checkout to the previous known-good commit using the project's
-   release process. Confirm the checkout is clean.
-3. Run the canonical deploy target for that environment again.
+2. Select the previous known-good dataset release and, if necessary, restore
+   the checkout to its matching API commit. Confirm the checkout is clean.
+3. Run the canonical deploy target with that release's explicit
+   `DATASET_RELEASE_ROOT`.
 4. Repeat all verification checks above.
 
 Rollback rebuilds the images from the selected commit; image tags alone are

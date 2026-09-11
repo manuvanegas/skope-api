@@ -160,23 +160,57 @@ Promotion must preserve the validated directory exactly. Record the source
 commit, pipeline configuration, source URLs, SHA-256 checksums, output size,
 and processing date with the release.
 
-1. Copy the generated `<dataset_id>` directory to a temporary, versioned path
-   on the target host, outside live `/srv/datasets/<dataset_id>`.
-2. Repeat the lookup, COG, STAC, and `gdalinfo` checks against that copy.
-3. Retain the current dataset directory as the rollback copy.
-4. Use the host provisioning/release procedure to atomically make the validated
-   directory available as `/srv/datasets/<dataset_id>` with read permission for
-   the API and TiTiler containers.
+1. Assemble all generated `<dataset_id>` directories into one immutable release
+   root such as `/srv/dataset-releases/<release>`. Do not mix dataset directories
+   from different releases in the live mount.
+2. Repeat the lookup, COG, STAC, and `gdalinfo` checks against that complete root.
+3. Retain the current release directory as the rollback copy.
+4. Deploy staging with
+   `make deploy-staging DATASET_RELEASE_ROOT=/srv/dataset-releases/<release>`.
 5. Deploy the matching API registry using the
    [deployment runbook](deployment.md), then test metadata, a representative
    tile, and a small extraction through the public hostname.
 6. Promote the same validated artifact to production; do not rerun the pipeline
    independently for production.
 
-If verification fails, restore the previous dataset directory and redeploy the
-matching previous API commit. Dataset files and API registry versions must be
-rolled back together.
+If verification fails, redeploy the previous release root and matching API
+commit. Dataset files and API registry versions must be rolled back together.
+
+After staging passes, a host-managed
+`/srv/dataset-releases/current` symlink may be switched to the validated
+version and used by the canonical deploy command. Docker resolves bind-mount
+symlinks when containers are created, so switching the symlink alone does not
+change running containers: run the deployment target to recreate them. An
+explicit versioned `DATASET_RELEASE_ROOT` is preferred during testing because
+the running selection is unambiguous.
 
 Exact host copy and atomic-switch commands are intentionally delegated to
 `comses/infrastructure`; this repository does not define filesystem ownership,
 release-directory naming, or whether staging and production share storage.
+
+## Migrate the complete legacy tree
+
+For a legacy `/srv/datasets/skope` tree containing `datasets/lbda_v2`,
+`datasets/paleocar_v2`, `datasets/prism`, and `datasets/srtm`, run:
+
+```bash
+make migrate-legacy-data \
+  LEGACY_DATA_ROOT=/srv/datasets/skope \
+  MIGRATED_DATA_ROOT=/srv/dataset-releases/<release> \
+  MIGRATION_SCRATCH_ROOT=/srv/dataset-migration-scratch/<release>
+```
+
+The target reads legacy data without modifying it and refuses to use a
+non-empty output directory. It transforms legacy cubes for LBDA v2, PaleoCAR
+v2, PRISM, and SRTM, and builds the twelve-variable PaleoCAR v3 package from
+the public S3 manifest. Output packages and the metadata populated with
+observed raster properties are written beneath `MIGRATED_DATA_ROOT`. Large
+temporary TIFFs are written to the host-backed `MIGRATION_SCRATCH_ROOT` rather
+than Docker's container storage.
+
+PRISM is migrated for completeness but is not currently published by the API
+registry. Review and add its generated metadata deliberately before exposing
+it. Validate the complete generated root using the checks above, then mount
+that exact directory in staging with `DATASET_RELEASE_ROOT`. The `_migration`
+directory is release provenance and is ignored by the API; dataset packages
+remain at the release root as required by `/data/<dataset_id>/lookup.json`.

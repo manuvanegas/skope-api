@@ -1,5 +1,9 @@
 ENVIRONMENT ?= dev
 COMPOSE_PROJECT_NAME ?= skope-api
+LEGACY_DATA_ROOT ?= /srv/datasets/skope
+MIGRATED_DATA_ROOT ?= timeseries/ingest/output/legacy-migration
+MIGRATION_SCRATCH_ROOT ?= timeseries/ingest/output/legacy-migration-scratch
+export DATASET_RELEASE_ROOT ?= /srv/dataset-releases/current
 COMPOSE = docker compose --project-name $(COMPOSE_PROJECT_NAME) \
 	--project-directory . \
 	-f deploy/compose/base.yml \
@@ -9,9 +13,9 @@ TEST_COMPOSE = docker compose --project-name $(COMPOSE_PROJECT_NAME)-test \
 	-f deploy/compose/base.yml \
 	-f deploy/compose/dev.yml
 
-.PHONY: help check-environment prepare config build deploy \
+.PHONY: help check-environment check-dataset-release prepare config build deploy \
 	deploy-dev deploy-staging deploy-production down restart logs ps ingest \
-	test test-api test-ingest
+	migrate-legacy-data test test-api test-ingest
 
 # Make 'help' the default target if someone just types `make`
 .DEFAULT_GOAL := help
@@ -30,6 +34,18 @@ check-environment:
 prepare: check-environment
 	@if [ "$(ENVIRONMENT)" = dev ]; then mkdir -p cog-input timeseries/ingest/output; fi
 
+check-dataset-release: check-environment
+	@if [ "$(ENVIRONMENT)" != dev ]; then \
+	  test -d "$(DATASET_RELEASE_ROOT)" || { \
+	    echo "DATASET_RELEASE_ROOT is not a readable directory: $(DATASET_RELEASE_ROOT)" 1>&2; \
+	    exit 2; \
+	  }; \
+	  test -r "$(DATASET_RELEASE_ROOT)" || { \
+	    echo "DATASET_RELEASE_ROOT is not readable: $(DATASET_RELEASE_ROOT)" 1>&2; \
+	    exit 2; \
+	  }; \
+	fi
+
 config: check-environment ##- Render and validate the selected Compose configuration
 	@$(COMPOSE) config
 
@@ -37,8 +53,8 @@ build: prepare ##- Build the selected environment's images
 	@$(COMPOSE) config --quiet
 	$(COMPOSE) build --pull
 
-deploy: build ##- Deploy ENVIRONMENT (defaults to dev) and wait for healthy services
-	$(COMPOSE) up -d --remove-orphans --wait --wait-timeout 120
+deploy: check-dataset-release build ##- Deploy ENVIRONMENT (defaults to dev) and wait for healthy services
+	$(COMPOSE) up -d --remove-orphans --force-recreate --wait --wait-timeout 120
 
 deploy-dev: override ENVIRONMENT=dev
 deploy-dev: deploy ##- Build and deploy the local development environment
@@ -64,6 +80,12 @@ ps: check-environment ##- Show service status for the selected environment
 ingest: prepare ##- Build and run the local COG/STAC ingest pipeline container
 	$(COMPOSE) --profile ingest build ingest
 	$(COMPOSE) --profile ingest run --rm ingest
+
+migrate-legacy-data: ##- Transform legacy cubes into COG/STAC/lookup dataset packages
+	./scripts/migrate-legacy-datasets.sh \
+		"$(LEGACY_DATA_ROOT)" \
+		"$(MIGRATED_DATA_ROOT)" \
+		"$(MIGRATION_SCRATCH_ROOT)"
 
 ##
 ## Testing
