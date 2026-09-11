@@ -95,36 +95,51 @@
   - 0.0
   - 1.0
   variables:
-  - id: ppt_annual
-    class: Precipitation
-    name: "Annual (Jan\u2013Dec) Precipitation"
-    units: mm
-    styles: default,raster
-    description: (Annual)
-    min: 0.0
-    max: 3260.0
-  - id: ppt_annual_predscaled
-    class: Precipitation
-    name: Annual (Jan-Dec) Precipitation, Scaled
-    units: mm
-    styles: default,raster
-    description: (Annual, Scaled)
-    min: 0.0
-    max: 3615.0
   - id: gdd_cotton_annual
     class: Temperature
-    name: "Annual (Jan\u2013Dec) Growing Degree Days"
+    name: Annual cotton growing degree days
     units: "\xB0F GDD"
-    visible: false
-    styles: default,raster
-    description: (Annual)
-    min: 0.0
-    max: 4145.0
-  - id: gdd_cotton_annual_predscaled
+  - id: gdd_cotton_maysept
     class: Temperature
-    name: "Annual (Jan\u2013Dec) Growing Degree Days, Scaled"
+    name: May-September cotton growing degree days
     units: "\xB0F GDD"
-    styles: default,raster
-    description: (Annual, Scaled)
-    min: 0.0
-    max: 4355.0
+  - id: gdd_cotton_wateryear
+    class: Temperature
+    name: Water-year cotton growing degree days
+    units: "\xB0F GDD"
+  - id: gdd_maize_annual
+    class: Temperature
+    name: Annual maize growing degree days
+    units: "\xB0F GDD"
+  - id: gdd_maize_maysept
+    class: Temperature
+    name: May-September maize growing degree days
+    units: "\xB0F GDD"
+  - id: gdd_maize_wateryear
+    class: Temperature
+    name: Water-year maize growing degree days
+    units: "\xB0F GDD"
+  - id: gdd_wheat_annual
+    class: Temperature
+    name: Annual wheat growing degree days
+    units: "\xB0F GDD"
+  - id: gdd_wheat_maysept
+    class: Temperature
+    name: May-September wheat growing degree days
+    units: "\xB0F GDD"
+  - id: gdd_wheat_wateryear
+    class: Temperature
+    name: Water-year wheat growing degree days
+    units: "\xB0F GDD"
+  - id: ppt_annual
+    class: Precipitation
+    name: Annual precipitation
+    units: mm
+  - id: ppt_maysept
+    class: Precipitation
+    name: May-September precipitation
+    units: mm
+  - id: ppt_wateryear
+    class: Precipitation
+    name: Water-year precipitation
+    units: mm

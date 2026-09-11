@@ -58,59 +58,46 @@ The bucket contains twelve PaleoCAR v3 variable groups. Each group contains
 `prediction.tif`, `prediction_scaled.tif`, `pi_deviation.tif`, and
 `pi_deviation_scaled.tif`; individual files are roughly 1.2–2.9 GB.
 
-Planning issue
-[`openskope/planning#40`](https://github.com/openskope/planning/issues/40)
-defines the target ingest set as the `prediction_scaled.tif` product from these
-nine variable groups:
+The checked-in manifest at
+`timeseries/ingest/manifests/paleocar_v3.yml` selects the
+`prediction_scaled.tif` product from all twelve variable groups:
 
 | Pipeline variable ID | Public S3 object |
 | --- | --- |
 | `gdd_cotton_annual` | `paleocar_v3/gdd_cotton_annual/prediction_scaled.tif` |
 | `gdd_cotton_maysept` | `paleocar_v3/gdd_cotton_maysept/prediction_scaled.tif` |
+| `gdd_cotton_wateryear` | `paleocar_v3/gdd_cotton_wateryear/prediction_scaled.tif` |
 | `gdd_maize_annual` | `paleocar_v3/gdd_maize_annual/prediction_scaled.tif` |
+| `gdd_maize_maysept` | `paleocar_v3/gdd_maize_maysept/prediction_scaled.tif` |
 | `gdd_maize_wateryear` | `paleocar_v3/gdd_maize_wateryear/prediction_scaled.tif` |
 | `gdd_wheat_annual` | `paleocar_v3/gdd_wheat_annual/prediction_scaled.tif` |
 | `gdd_wheat_maysept` | `paleocar_v3/gdd_wheat_maysept/prediction_scaled.tif` |
+| `gdd_wheat_wateryear` | `paleocar_v3/gdd_wheat_wateryear/prediction_scaled.tif` |
 | `ppt_annual` | `paleocar_v3/ppt_annual/prediction_scaled.tif` |
 | `ppt_maysept` | `paleocar_v3/ppt_maysept/prediction_scaled.tif` |
 | `ppt_wateryear` | `paleocar_v3/ppt_wateryear/prediction_scaled.tif` |
 
-The bucket also exposes `gdd_cotton_wateryear`, `gdd_maize_maysept`, and
-`gdd_wheat_wateryear`, but issue #40 does not include them. Add them only after
-the intended public-variable scope and metadata have been confirmed.
+This extends the nine groups requested in
+[`openskope/planning#40`](https://github.com/openskope/planning/issues/40) with
+the three additional groups present in the bucket. The manifest is the
+operational source map; `timeseries/ingest/metadata.yml` is the descriptive
+dataset record. Their dataset ID and complete variable-ID set must match
+exactly. The pipeline verifies that relationship before it opens any raster.
 
-Before downloading, resolve the current registry mismatch. The checked-in
-ingest metadata describes four annual scaled and unscaled variables, while
-staging and production advertise four older variable IDs. Update the ingest
-metadata and all applicable API registries to the nine IDs above. The commands
-below implement issue #40 and must not be used for deployment until that
-metadata change is complete.
-
-From the `skope-api` repository root, download each selected source into the
-flat input directory and name it after its pipeline variable ID:
+The default ingest profile streams these public objects directly through GDAL,
+so downloading them first is not required:
 
 ```bash
-mkdir -p cog-input
-
-for variable_id in \
-  gdd_cotton_annual \
-  gdd_cotton_maysept \
-  gdd_maize_annual \
-  gdd_maize_wateryear \
-  gdd_wheat_annual \
-  gdd_wheat_maysept \
-  ppt_annual \
-  ppt_maysept \
-  ppt_wateryear
-do
-  curl --fail --location --continue-at - \
-    --output "cog-input/${variable_id}.tif" \
-    "https://skope.s3.us-west-2.amazonaws.com/paleocar_v3/${variable_id}/prediction_scaled.tif"
-done
+make ingest
 ```
 
-Record the checksums in the release record after downloading. S3 multipart
-ETags are not MD5 checksums, so calculate local SHA-256 values:
+To transform existing production TIFFs instead, copy the manifest and replace
+each `uri` with the corresponding local file path. Preserve the same dataset
+and variable IDs. Point `INPUT_MANIFEST_PATH` at that file when running the
+container. Local and S3 sources may be mixed in one manifest.
+
+Record the selected manifest with the release. When inputs are materialized
+locally, also record SHA-256 checksums; S3 multipart ETags are not MD5 checksums:
 
 ```bash
 sha256sum cog-input/*.tif
@@ -119,8 +106,9 @@ sha256sum cog-input/*.tif
 ## Run the pipeline
 
 The checked-in Compose profile configures PaleoCAR v3 as annual data beginning
-in 0103 CE, slices each input into COGs of at most 100 bands, converts values to
-UInt16, and writes output under `timeseries/ingest/output/paleocar_v3`:
+in 0103 CE, loads the twelve-variable manifest, slices each input into COGs of
+at most 100 bands, converts values to UInt16, and writes output under
+`timeseries/ingest/output/paleocar_v3`:
 
 ```bash
 make ingest

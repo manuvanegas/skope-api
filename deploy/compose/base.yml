@@ -67,6 +67,7 @@ services:
       DATASET_TIME_DELTA: '{"years": 1}'
       GDAL_DISABLE_READDIR_ON_OPEN: EMPTY_DIR
       INPUT_DIR: /data
+      INPUT_MANIFEST_PATH: /ingest/manifests/paleocar_v3.yml
       METADATA_FILE_PATH: /ingest/metadata.yml
       OUTPUT_DIR: /output/paleocar_v3
       TRUNC_TO_UINT16: "true"
