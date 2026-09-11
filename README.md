@@ -9,10 +9,13 @@ Backend services for dataset metadata and timeseries data extracted from SKOPE d
 
 ### Dataset Metadata
 
-Dataset metadata currently needs to be specified twice:
+The registry exposed by the [metadata endpoint](https://api.openskope.org/docs#/metadata/metadata_metadata_get) and consumed by the [skopeui](https://github.com/openskope/skopeui) app is generated when the API image is built, from:
 
-- `timeseries/metadata.yml` contains the full dataset metadata exposed by the [metadata endpoint](https://api.openskope.org/docs#/metadata/metadata_metadata_get) and consumed by the [skopeui](https://github.com/openskope/skopeui) app
-- `deploy/metadata/{dev,staging,prod}.yml` contains the environment-specific registry copied into the API image
+- `deploy/metadata/datasets/<dataset_id>.yml`: the description of a dataset and all of its variables, one file per dataset.
+- `deploy/metadata/{dev,staging,prod}.yml`: the data release the environment mounts at `/data` (`release:`) and, listed explicitly, the datasets and variables it publishes.
+- `<release>/<dataset_id>/dataset-facts.json`: facts observed in the processed data (CRS, transform, timespan, per-variable min/max), written by the ingest pipeline.
+
+The build fails with a message naming the files involved when a published variable is not described or has no processed data, an observed field appears in a dataset file, or the described and processed timespans disagree. See the [dataset preparation runbook](docs/data-preparation.md#required-dataset-contract) for how these files relate to processed data.
 
 ### Development
 
@@ -54,8 +57,9 @@ See the [dataset preparation runbook](docs/data-preparation.md) when adding or
 rebuilding the contents mounted at `/data`.
 
 The application hosts are provisioned by `comses/infrastructure`. Both environments
-use `/srv/apps/skope-api` for this checkout, `/srv/datasets` for dataset storage,
-and host port `8001` for the API. From the appropriate host, deploy with:
+use `/srv/apps/skope-api` for this checkout, the data release named by `release:` in
+`deploy/metadata/<environment>.yml`, and host port `8001` for the API. From the
+appropriate host, deploy with:
 
 ```bash
 make deploy-staging

@@ -1,0 +1,20 @@
+# Migrated for completeness; no environment publishes PRISM yet. Expand this
+# description before selecting it in an environment file.
+id: prism
+title: Parameter-elevation Regressions on Independent Slopes Model
+timespan:
+  resolution:
+    months: 1
+  period:
+    gte: '1895-01'
+    lte: '2013-07'
+variables:
+  - id: ppt
+    class: Precipitation
+    name: Monthly precipitation
+  - id: tmax
+    class: Temperature
+    name: Monthly maximum temperature
+  - id: tmin
+    class: Temperature
+    name: Monthly minimum temperature

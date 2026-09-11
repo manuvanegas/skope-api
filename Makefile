@@ -3,7 +3,11 @@ COMPOSE_PROJECT_NAME ?= skope-api
 LEGACY_DATA_ROOT ?= /srv/datasets/skope
 MIGRATED_DATA_ROOT ?= timeseries/ingest/output/legacy-migration
 MIGRATION_SCRATCH_ROOT ?= timeseries/ingest/output/legacy-migration-scratch
-export DATASET_RELEASE_ROOT ?= /srv/dataset-releases/current
+# Each environment's data release is the unquoted path after `release:` in
+# deploy/metadata/<environment>.yml, so the deployed commit determines both the
+# registry and the data mounted at /data. Command-line values are ignored on purpose.
+override DATASET_RELEASE_ROOT = $(shell sed -n 's/^release:[[:space:]]*//p' deploy/metadata/$(ENVIRONMENT).yml | sed 's/[[:space:]]*\#.*//')
+export DATASET_RELEASE_ROOT
 COMPOSE = docker compose --project-name $(COMPOSE_PROJECT_NAME) \
 	--project-directory . \
 	-f deploy/compose/base.yml \
@@ -13,7 +17,7 @@ TEST_COMPOSE = docker compose --project-name $(COMPOSE_PROJECT_NAME)-test \
 	-f deploy/compose/base.yml \
 	-f deploy/compose/dev.yml
 
-.PHONY: help check-environment check-dataset-release prepare config build deploy \
+.PHONY: help check-environment collect-release-facts prepare config build deploy \
 	deploy-dev deploy-staging deploy-production down restart logs ps ingest \
 	migrate-legacy-data test test-api test-ingest
 
@@ -34,26 +38,31 @@ check-environment:
 prepare: check-environment
 	@if [ "$(ENVIRONMENT)" = dev ]; then mkdir -p cog-input timeseries/ingest/output; fi
 
-check-dataset-release: check-environment
-	@if [ "$(ENVIRONMENT)" != dev ]; then \
-	  test -d "$(DATASET_RELEASE_ROOT)" || { \
-	    echo "DATASET_RELEASE_ROOT is not a readable directory: $(DATASET_RELEASE_ROOT)" 1>&2; \
-	    exit 2; \
-	  }; \
-	  test -r "$(DATASET_RELEASE_ROOT)" || { \
-	    echo "DATASET_RELEASE_ROOT is not readable: $(DATASET_RELEASE_ROOT)" 1>&2; \
-	    exit 2; \
-	  }; \
+# Copies the selected release's <dataset_id>/dataset-facts.json files into the build context,
+# where the image build merges them into the registry.
+collect-release-facts: check-environment
+	@if [ -z "$(DATASET_RELEASE_ROOT)" ]; then \
+	  echo "Set release: in deploy/metadata/$(ENVIRONMENT).yml to the data release to deploy" 1>&2; \
+	  exit 2; \
 	fi
+	@if [ "$(ENVIRONMENT)" != dev ] && { [ ! -d "$(DATASET_RELEASE_ROOT)" ] || [ ! -r "$(DATASET_RELEASE_ROOT)" ]; }; then \
+	  echo "The release in deploy/metadata/$(ENVIRONMENT).yml is not a readable directory: $(DATASET_RELEASE_ROOT)" 1>&2; \
+	  exit 2; \
+	fi
+	@rm -rf build/release-facts && mkdir -p build/release-facts
+	@for facts in "$(DATASET_RELEASE_ROOT)"/*/dataset-facts.json; do \
+	  [ -f "$$facts" ] || continue; \
+	  cp "$$facts" "build/release-facts/$$(basename "$$(dirname "$$facts")").json"; \
+	done
 
 config: check-environment ##- Render and validate the selected Compose configuration
 	@$(COMPOSE) config
 
-build: prepare ##- Build the selected environment's images
+build: prepare collect-release-facts ##- Build the selected environment's images
 	@$(COMPOSE) config --quiet
 	$(COMPOSE) build --pull
 
-deploy: check-dataset-release build ##- Deploy ENVIRONMENT (defaults to dev) and wait for healthy services
+deploy: build ##- Deploy ENVIRONMENT (defaults to dev) and wait for healthy services
 	$(COMPOSE) up -d --remove-orphans --force-recreate --wait --wait-timeout 120
 
 deploy-dev: override ENVIRONMENT=dev
@@ -96,7 +105,7 @@ migrate-legacy-data: ##- Transform legacy cubes into COG/STAC/lookup dataset pac
 test: test-api test-ingest ##- Run all API and ingest tests
 
 test-api: override ENVIRONMENT=dev
-test-api: prepare ##- Build the development image and run the API tests
+test-api: prepare collect-release-facts ##- Build the development image and run the API tests
 	@$(TEST_COMPOSE) config --quiet
 	$(TEST_COMPOSE) build server titiler
 	@trap '$(TEST_COMPOSE) down --remove-orphans' EXIT INT TERM; \

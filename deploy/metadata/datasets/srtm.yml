@@ -1,0 +1,77 @@
+id: srtm
+title: SRTM 90m Digital Elevation Model V4.1
+ordering: 99
+originator: NASA Shuttle Radar Topographic Mission (SRTM)
+references: >-
+  Jarvis A., H.I. Reuter, A. Nelson, E. Guevara, 2008, Hole-filled seamless
+  SRTM data Version 4, available from the CGIAR-CSI SRTM 90m Database:
+  http://srtm.csi.cgiar.org/.
+
+
+  Reuter H.I, A. Nelson, A. Jarvis, 2007, An evaluation of void filling
+  interpolation methods for SRTM data, International Journal of Geographic
+  Information Science, 21:9, 983-1008.
+contactInformation: >-
+  For technical correspondence regarding the SRTM 90m Digital Elevation Data,
+  contact:
+
+
+  > Andy Jarvis, Ph.D.
+
+  > Program Leader --- Decision and Policy Analysis
+
+  > International Centre for Tropical Agriculture (CIAT)
+
+  > Email: a.jarvis@cgiar.org
+description: >-
+  Digital elevation data at 3 arc second (approx. 90m) horizontal resolution
+  and less than 16m vertical resolution. The data are provided by the NASA
+  Shuttle Radar Topographic Mission (SRTM) and the International Centre for
+  Tropical Agriculture (CIAT), and are currently distributed free of charge by
+  USGS and available for download through CGIAR at http://srtm.csi.cgiar.org/.
+methodSummary: >-
+  These data are provided by the Consortium for Spatial Information
+  (CGIAR-CSI) of the Consultative Group for International Agricultural
+  Research (CGIAR). The data are post-processed 3-arc second DEM data for the
+  globe. The original SRTM (v1) data has been subjected to a number of
+  processing steps to provide seamless and complete elevational surfaces for
+  the globe. In its original release, SRTM data contained regions of no-data,
+  specifically over water bodies (lakes and rivers), and in areas where
+  insufficient textural detail was available in the original radar images to
+  produce three-dimensional elevational data. The CGIAR-CSI SRTM data product
+  applies a hole-filling algorithm to provide continuous elevational surfaces.
+uncertainty: < 16m vertical error
+sourceUrl: 'http://srtm.csi.cgiar.org'
+type: dataset
+status: Published
+revised: '2009-06-14'
+region:
+  zoom: 2
+  center:
+    - 37.5
+    - -95
+  resolution: 250m
+  name: Continental USA
+  style:
+    color: gray
+    weight: 2
+  extents:
+    -   - 50
+        - -125
+    -   - 25
+        - -65
+timespan:
+  resolution: ''
+  resolutionLabel: ''
+  period:
+    gte: '2009'
+    lte: '2009'
+    suffix: CE
+variables:
+  - id: srtm_elevation
+    class: Elevation
+    name: Elevation
+    units: m
+    wmsLayer: 'SKOPE:srtm'
+    visible: false
+    styles: default
