@@ -190,12 +190,19 @@ release-directory naming, or whether staging and production share storage.
 
 ## Migrate the complete legacy tree
 
-For a legacy `/srv/datasets/skope` tree containing `datasets/lbda_v2`,
-`datasets/paleocar_v2`, `datasets/prism`, and `datasets/srtm`, run:
+Transformation is paused pending approval of the proposed
+[dataset release specification](specs/dataset-release-v1.md). Do not run
+`make migrate-legacy-data` while this pause is in effect. The legacy command
+still includes PRISM for reproducibility, but PRISM is outside the cleanroom
+migration scope.
+
+The command is retained for reference. For a legacy tree staged at
+`/srv/ingest/incoming/skope` containing `datasets/lbda_v2`,
+`datasets/paleocar_v2`, `datasets/prism`, and `datasets/srtm`, it is:
 
 ```bash
 make migrate-legacy-data \
-  LEGACY_DATA_ROOT=/srv/datasets/skope \
+  LEGACY_DATA_ROOT=/srv/ingest/incoming/skope \
   MIGRATED_DATA_ROOT=/srv/dataset-releases/<release> \
   MIGRATION_SCRATCH_ROOT=/srv/dataset-migration-scratch/<release>
 ```
@@ -204,16 +211,19 @@ While staging or reviewing the source data, run the same checks without
 creating output:
 
 ```bash
-make preflight-legacy-data LEGACY_DATA_ROOT=/srv/datasets/skope
+make preflight-legacy-data
 ```
 
-The target reads legacy data without modifying it and refuses to use a
-non-empty output directory. It transforms legacy cubes for LBDA v2, PaleoCAR
-v2, PRISM, and SRTM, and builds the twelve-variable PaleoCAR v3 package from
-the public S3 manifest. Output packages and the metadata populated with
-observed raster properties are written beneath `MIGRATED_DATA_ROOT`. Large
-temporary TIFFs are written to the host-backed `MIGRATION_SCRATCH_ROOT` rather
-than Docker's container storage.
+The default source root is `/srv/ingest/incoming/skope`. Override
+`LEGACY_DATA_ROOT` only when validating a differently staged copy.
+
+When resumed, the migration target reads legacy data without modifying it and
+refuses to use a non-empty output directory. It transforms legacy cubes for
+LBDA v2, PaleoCAR v2, PRISM, and SRTM, and builds the twelve-variable PaleoCAR
+v3 package from the public S3 manifest. Output packages and the metadata
+populated with observed raster properties are written beneath
+`MIGRATED_DATA_ROOT`. Large temporary TIFFs are written to the host-backed
+`MIGRATION_SCRATCH_ROOT` rather than Docker's container storage.
 
 Before creating the output or scratch directories, the migration opens every
 source in metadata-only mode and verifies that its band-derived temporal end

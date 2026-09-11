@@ -1,6 +1,6 @@
 ENVIRONMENT ?= dev
 COMPOSE_PROJECT_NAME ?= skope-api
-LEGACY_DATA_ROOT ?= /srv/datasets/skope
+LEGACY_DATA_ROOT ?= /srv/ingest/incoming/skope
 MIGRATED_DATA_ROOT ?= timeseries/ingest/output/legacy-migration
 MIGRATION_SCRATCH_ROOT ?= timeseries/ingest/output/legacy-migration-scratch
 export DATASET_RELEASE_ROOT ?= /srv/dataset-releases/current
