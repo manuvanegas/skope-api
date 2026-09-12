@@ -3,7 +3,7 @@ COMPOSE_PROJECT_NAME ?= skope-api
 LEGACY_DATA_ROOT ?= /srv/ingest/incoming/skope
 MIGRATED_DATA_ROOT ?= timeseries/ingest/output/legacy-migration
 MIGRATION_SCRATCH_ROOT ?= timeseries/ingest/output/legacy-migration-scratch
-export DATASET_RELEASE_ROOT ?= /srv/dataset-releases/current
+export DATASET_RELEASE_ROOT
 COMPOSE = docker compose --project-name $(COMPOSE_PROJECT_NAME) \
 	--project-directory . \
 	-f deploy/compose/base.yml \
@@ -36,6 +36,14 @@ prepare: check-environment
 
 check-dataset-release: check-environment
 	@if [ "$(ENVIRONMENT)" != dev ]; then \
+	  test -n "$(DATASET_RELEASE_ROOT)" || { \
+	    echo "DATASET_RELEASE_ROOT is required for $(ENVIRONMENT); set it to /srv/datasets/releases/skope-r-YYYY.MM.DD[-N]" 1>&2; \
+	    exit 2; \
+	  }; \
+	  case "$(DATASET_RELEASE_ROOT)" in \
+	    /srv/datasets/releases/skope-r-*) ;; \
+	    *) echo "DATASET_RELEASE_ROOT must select an explicit /srv/datasets/releases/skope-r-YYYY.MM.DD[-N] directory" 1>&2; exit 2;; \
+	  esac; \
 	  test -d "$(DATASET_RELEASE_ROOT)" || { \
 	    echo "DATASET_RELEASE_ROOT is not a readable directory: $(DATASET_RELEASE_ROOT)" 1>&2; \
 	    exit 2; \

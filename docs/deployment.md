@@ -45,22 +45,23 @@ DNS, TLS, and the public reverse proxy are owned by `comses/infrastructure`.
 ## Deploy
 
 Staging and production mount one complete, immutable dataset release into
-`/data` in both containers. `DATASET_RELEASE_ROOT` defaults to
-`/srv/dataset-releases/current` and may name either a versioned directory or a
-symlink to one. Select the release explicitly when useful for a trial deploy:
+`/data` in both containers. Staging and production require
+`DATASET_RELEASE_ROOT` to name an explicit immutable CalVer release directory
+beneath `/srv/datasets/releases`; there is no mutable default:
 
 ```bash
 make deploy-dev
-make deploy-staging DATASET_RELEASE_ROOT=/srv/dataset-releases/<release>
-make deploy-production DATASET_RELEASE_ROOT=/srv/dataset-releases/<release>
+make deploy-staging DATASET_RELEASE_ROOT=/srv/datasets/releases/skope-r-2026.09.12
+make deploy-production DATASET_RELEASE_ROOT=/srv/datasets/releases/skope-r-2026.09.12
 ```
 
 The target builds the selected images with refreshed base images, recreates the
-Compose containers so a changed release symlink is resolved, removes orphaned
+Compose containers with the selected immutable release, removes orphaned
 containers, and waits up to 120 seconds for the API, Redis, and TiTiler health
 checks. It refuses a staging or production
-deploy when the selected release root is absent or unreadable. TiTiler remains
-on the internal Compose network; public tile requests pass through the API.
+deploy when the selected release root does not follow the CalVer path
+convention or is absent or unreadable. TiTiler remains on the internal Compose
+network; public tile requests pass through the API.
 
 ## Verify
 

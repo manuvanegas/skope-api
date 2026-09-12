@@ -161,12 +161,12 @@ commit, pipeline configuration, source URLs, SHA-256 checksums, output size,
 and processing date with the release.
 
 1. Assemble all generated `<dataset_id>` directories into one immutable release
-   root such as `/srv/dataset-releases/<release>`. Do not mix dataset directories
-   from different releases in the live mount.
+   root such as `/srv/datasets/releases/skope-r-2026.09.12`. Do not mix dataset
+   directories from different releases in the live mount.
 2. Repeat the lookup, COG, STAC, and `gdalinfo` checks against that complete root.
 3. Retain the current release directory as the rollback copy.
 4. Deploy staging with
-   `make deploy-staging DATASET_RELEASE_ROOT=/srv/dataset-releases/<release>`.
+   `make deploy-staging DATASET_RELEASE_ROOT=/srv/datasets/releases/skope-r-2026.09.12`.
 5. Deploy the matching API registry using the
    [deployment runbook](deployment.md), then test metadata, a representative
    tile, and a small extraction through the public hostname.
@@ -176,13 +176,11 @@ and processing date with the release.
 If verification fails, redeploy the previous release root and matching API
 commit. Dataset files and API registry versions must be rolled back together.
 
-After staging passes, a host-managed
-`/srv/dataset-releases/current` symlink may be switched to the validated
-version and used by the canonical deploy command. Docker resolves bind-mount
-symlinks when containers are created, so switching the symlink alone does not
-change running containers: run the deployment target to recreate them. An
-explicit versioned `DATASET_RELEASE_ROOT` is preferred during testing because
-the running selection is unambiguous.
+After staging passes, promote the same immutable directory by passing its exact
+CalVer path to the production deployment. Staging and production do not use a
+mutable `current` symlink: the selected path remains explicit in the deployment
+command and container configuration, and rollback selects the prior immutable
+path in the same way.
 
 Exact host copy and atomic-switch commands are intentionally delegated to
 `comses/infrastructure`; this repository does not define filesystem ownership,
@@ -203,8 +201,8 @@ The command is retained for reference. For a legacy tree staged at
 ```bash
 make migrate-legacy-data \
   LEGACY_DATA_ROOT=/srv/ingest/incoming/skope \
-  MIGRATED_DATA_ROOT=/srv/dataset-releases/<release> \
-  MIGRATION_SCRATCH_ROOT=/srv/dataset-migration-scratch/<release>
+  MIGRATED_DATA_ROOT=/srv/datasets/releases/skope-r-2026.09.12 \
+  MIGRATION_SCRATCH_ROOT=/srv/dataset-migration-scratch/skope-r-2026.09.12
 ```
 
 While staging or reviewing the source data, run the same checks without

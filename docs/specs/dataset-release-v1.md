@@ -1315,6 +1315,13 @@ transaction. The root manifest supplies an application-level commit protocol.
 - **TXN-010:** Existing COGs MUST NOT be trusted solely because a filename
   exists. Reuse requires matching source/build identity, expected checksum, COG
   validation, and cross-artifact agreement.
+- **TXN-011:** A local deployment MUST select an explicit immutable
+  `<release-storage-root>/<release-id>` directory, validate its root manifest,
+  and mount the same resolved physical directory read-only into the API and
+  TiTiler. A mutable symlink or pointer MUST NOT be the deployed bind-mount
+  source. Promotion and rollback MUST recreate both containers with the newly
+  selected explicit path and record the selected release ID and resolved path
+  in deployment state.
 
 ### 15.4 Durable orchestration
 
@@ -1493,7 +1500,7 @@ is accepted. Together they cover every normative MUST in this proposal.
 | AT-016 | Scan all outputs and registry inputs to prove `dataset-facts.json` is absent and unread. | MAN-007, API-001 |
 | AT-017 | Reproduce a temporal `lookup.json` byte-for-byte solely from STAC; exercise current tile and extraction resolution against first, middle, and last bands. | API-003 through API-005 |
 | AT-018 | Generate `/metadata` from STAC and compare its contract to existing API fixtures, including colormaps and geometry-size inputs. | API-002, API-006, API-007 |
-| AT-019 | Inject failure before and after every local publication stage; no partial release becomes selectable and the prior release remains unchanged. | REL-006, TXN-001 through TXN-003, TXN-008 through TXN-010, VAL-008 |
+| AT-019 | Inject failure before and after every local publication stage; no partial release becomes selectable and the prior release remains unchanged. Deploy and roll back through explicit immutable release paths, require the API and TiTiler to mount the same path, and reject missing manifests, mutable pointer sources, and path disagreement. | REL-006, TXN-001 through TXN-003, TXN-008 through TXN-011, VAL-008 |
 | AT-020 | Inject object upload, verification, and manifest-write failures; retry idempotently; reject mismatched existing objects and prefixes without a valid root marker. | TXN-004 through TXN-010, MAN-008 |
 | AT-021 | Preflight all four datasets with one late failure; assert no release or scratch output and actionable context for every failure. | OBS-002, VAL-001, VAL-002, VAL-004 |
 | AT-022 | Validate every STAC object offline, resolve every link after relocating the release, and detect byte/STAC/lookup/manifest disagreement. | REL-002, REL-007, VAL-005 through VAL-008 |
@@ -1729,6 +1736,14 @@ Redis-backed extraction lifecycle.
 | Semantic version | Familiar release notation | Compatibility semantics do not map cleanly to curated scientific-data publications. Rejected. |
 | SKOPE-prefixed CalVer plus a separate declaration digest | Concise, readable, sortable by approval date, and easy to discuss while retaining cryptographic reproducibility independently | Requires explicit assignment and a same-day sequence rule. Selected as `skope-r-YYYY.MM.DD[-N]` under REL-005 and BOOT-010. |
 
+### 20.13 Local release selection
+
+| Alternative | Advantages | Costs and conclusion |
+| --- | --- | --- |
+| Explicit immutable release path | Makes the running selection auditable, keeps API and TiTiler aligned, and makes rollback an explicit redeployment | Promotion requires supplying and recording the path each time. Selected. |
+| Mutable `current` symlink | Provides a convenient stable host path and supports atomic link replacement | Docker resolves bind-mount symlinks at container creation, changing the link does not update running containers, and the displayed source can obscure the actual mounted release. Rejected as a deployment source. |
+| Manifest-based pointer file | Can carry release identity and digest and generalizes to object storage | Compose cannot bind-mount through it directly, so it adds a resolver and mutable deployment state. Deferred to a future orchestration layer and excluded from the release format. |
+
 ## 21. Unresolved decisions
 
 Production implementation remains blocked until these decisions are reviewed.
@@ -1741,7 +1756,6 @@ named owner accepting the result.
 | Exact temporal chunk policy | One timestep; fixed counts of 25, 100, or 250; target byte size | Temporal PaleoCAR rasters are approximately 1,900-2,000 bands on a 1,560-by-1,440 grid; tile requests read one band while extraction groups many requested bands by file | Use 100 timesteps as a provisional baseline only; choose from the staged experiment using tile latency with extraction and operational guardrails | Run EXP-002 and EXP-003 on representative PaleoCAR variables; do not reproduce every layout for every dataset | COG filenames and Item boundaries cannot be finalized |
 | PaleoCAR v3 source-product semantics | Use unscaled prediction/deviation pair; scaled pair; publish both as explicit variants | Each of twelve S3 quantity directories contains `prediction`, `prediction_scaled`, `pi_deviation`, and `pi_deviation_scaled`; current ingest selects only `prediction_scaled`; TIFF headers declare no explanatory scale, offset, unit, or statistics, and matched samples show scientifically different values | Provisionally select the paired `prediction_scaled` and `pi_deviation_scaled` products, but block production publication until science review; express the choice through META-009 so it is reversible in a new release | Dataset authors or science owners must document the scaling transformation, meaning and confidence level of `pi_deviation`, units, required pairings, and intended best estimate | Source mappings, uncertainty assets, encoding policy, and release content cannot be finalized |
 | PaleoCAR v3 `UInt16` relevance | Preserve source `UInt32`; lossless per-variable `UInt16` | `UInt16` can reduce storage, range traffic, and memory, but current source files lack complete statistics and the dataset-wide switch provides no range or nodata proof | Use source-preserving `UInt32`; permit only per-variable exceptions that pass EXP-004 | Full-domain scans and representative COG, tile, extraction, and summary benchmarks | Releases can proceed with larger `UInt32` outputs; only the optional optimization is deferred |
-| Local release pointer | Explicit configured path; atomic symlink; manifest-based pointer file | Current Compose accepts a path and documents a possible symlink | Explicit immutable path for staging trials | Infrastructure review of atomic switching and Docker bind semantics | Promotion automation remains outside the format |
 | Object-storage cleanup | Immediate delete; retention window; lifecycle rule | Failed prefixes are invisible without a valid root manifest | Lifecycle rule after a retention window | Cost, audit, and incident-response input | Stale bytes consume storage but cannot become visible |
 | API compatibility duration | One release; fixed calendar period; versioned endpoint transition | Existing UI consumes `/metadata`; no deprecation agreement exists | Maintain until a versioned client migration is measured | UI inventory, telemetry, and stakeholder commitment | Legacy projection remains required |
 | STAC-GeoParquet item mirror | Required; recommended; omitted | Portolan recommends it for raster scene discovery; SKOPE currently uses lookup | Generate experimentally for largest collection | Measure size, generation time, query latency, and exact-sync validation | Static bulk discovery may remain slower; core API is unaffected |
@@ -1790,7 +1804,7 @@ material, not an implementation commitment.
 | OBS-001 to OBS-013 | Typed observation | Preflight, build plan, and final observation | Source headers, temporal/grid invariants, state and freeze tests | 2, 3 |
 | COG-001 to COG-016 | Byte-level COG authority | COG writer and byte inspector | OGC validator, GDAL inspection, value-space statistics, benchmarks | 3 |
 | MAN-001 to MAN-010 | Integrity manifests | Dataset/root manifest writers | JSON Schema, inventory, checksum, entrypoint, forbidden-field, and orchestration-reference tests | 6, 7 |
-| TXN-001 to TXN-010 | Root manifest and immutable storage | Local/object publisher | Failure injection, retry, visibility, cleanup tests | 7 |
+| TXN-001 to TXN-011 | Root manifest and immutable storage | Local/object publisher and deployment adapter | Failure injection, retry, visibility, cleanup, explicit selection, and aligned-mount tests | 7 |
 | ORCH-001 to ORCH-008 | Release declaration plus operational workflow history | Direct runner or durable workflow adapter | Cross-runner equivalence, replay/retry, payload-boundary, idempotency, completion-record, and provenance-reference tests | 7 |
 | API-001 to API-010 | STAC plus environment policy | Registry and lookup generators plus coordinated SKOPE UI adapter | Golden `/metadata`, exact tile/legend ranges, temporal/static resolver, aliases, and reproducibility tests | 5, 8 |
 | VAL-001 to VAL-008 | All authorities | Validation orchestrator | Pass isolation, structured findings, end-to-end conformance | 1-8 |
