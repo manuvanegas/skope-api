@@ -97,8 +97,8 @@ their variables do not currently demonstrate aligned temporal coverage.
   boundaries. Its raster bands map one-to-one to canonical timesteps.
 
 **Static raster dataset**
-: A raster dataset without a scientific temporal axis. It may use a standalone
-  Collection asset or spatial Items and does not acquire a synthetic scientific
+: A raster dataset without a scientific temporal axis. In v1 it uses a
+  standalone Collection asset and does not acquire a synthetic scientific
   timestamp merely to satisfy legacy API behavior.
 
 **Dataset release**
@@ -186,8 +186,7 @@ the integrity and completion authority.
 
 `lbda_v2`, `paleocar_v2`, and `paleocar_v3` are expected to use
 `TemporalCubeDataset`, subject to science review of their temporal semantics.
-SRTM is expected to use `StaticRasterDataset`; its exact static layout remains
-unresolved.
+SRTM MUST use `StaticRasterDataset` with the single-COG layout defined below.
 
 ### 5.2 Collection and Item model
 
@@ -209,23 +208,65 @@ This reverses the current one-Collection-per-variable layout. Aligned Items make
 cross-variable completeness and temporal chunk boundaries directly testable.
 The exact chunk size remains unresolved in Section 21.
 
-### 5.3 SRTM alternatives
+### 5.3 SRTM profile
 
 SRTM is a static elevation dataset in the proposed scientific model, although
-the legacy API exposes one lookup timestep. Two packaging models remain
-credible:
+the legacy API exposes one lookup timestep.
 
-1. One Collection-level COG asset, suitable when a single optimized object gives
-   acceptable tile and extraction performance.
-2. One Item per spatial tile, suitable when the existing object is too large for
-   reliable generation, validation, transfer, or range access.
+- **ORG-010:** The v1 SRTM release MUST contain one optimized COG as a Collection
+  asset and MUST NOT contain spatial Items. Phase 0 MUST confirm that the COG can
+  be generated, validated, transferred, tiled, and window-read within documented
+  operational limits before SRTM migration begins. Failure to meet those limits
+  MUST block SRTM migration and trigger review of a future spatial-tiling profile;
+  it MUST NOT cause an unreviewed layout change within v1.
 
-Evidence is insufficient to choose safely. The decision requires measurements
-of the source dimensions and size, representative TiTiler requests, extraction
-windows, COG generation resources, transfer behavior, and client compatibility.
-Section 21 defines the recommended experiment.
+This is the simplest model compatible with the current single-source API path.
+Spatial tiling remains a future fallback because it would require mosaic or
+spatial routing behavior in addition to a different STAC layout.
 
-### 5.4 Identifiers, paths, and names
+- **ORG-011:** The SRTM Collection temporal extent MUST represent the reviewed
+  primary radar-acquisition interval during the February 11-22, 2000 mission,
+  as documented by
+  [NASA Earthdata](https://www.earthdata.nasa.gov/centers/lp-daac). Exact RFC
+  3339 bounds MUST be taken from authoritative source metadata rather than
+  constructed from an unexplained legacy year. The Collection MUST record
+  CGIAR-CSI Version 4.1 publication and void-filling as version, citation,
+  processing, and provenance facts rather than observation time. Provenance
+  MUST disclose the CGIAR product's documented use of interpolation and
+  ancillary elevation sources for filled pixels, as described by the
+  [CGIAR product documentation](https://bigdata.cgiar.org/srtm-90m-digital-elevation-database/).
+  The static COG band name MUST be `srtm_elevation`.
+
+### 5.4 PaleoCAR v3 variable inventory
+
+The September 2026 review of the
+[public SKOPE source-object listing](https://skope.s3.us-west-2.amazonaws.com/?list-type=2)
+found twelve PaleoCAR v3 quantity directories. The inventory decision treats
+directory names as source mappings, not automatically as public identifiers.
+
+- **ORG-012:** The proposed v1 `paleocar_v3` Collection MUST contain exactly the
+  following twelve canonical variables:
+
+  - `gdd_cotton_annual`
+  - `gdd_cotton_may_sept`
+  - `gdd_cotton_water_year`
+  - `gdd_maize_annual`
+  - `gdd_maize_may_sept`
+  - `gdd_maize_water_year`
+  - `gdd_wheat_annual`
+  - `gdd_wheat_may_sept`
+  - `gdd_wheat_water_year`
+  - `ppt_annual`
+  - `ppt_may_sept`
+  - `ppt_water_year`
+
+The source manifest maps S3 spellings such as `maysept` and `wateryear` to the
+canonical `may_sept` and `water_year` forms. Selecting this inventory does not
+select among each directory's `prediction`, `prediction_scaled`,
+`pi_deviation`, and `pi_deviation_scaled` products. Their scientific semantics
+and pairing remain unresolved in Section 21.
+
+### 5.5 Identifiers, paths, and names
 
 - **ORG-005:** Dataset and variable identifiers MUST match
   `^[a-z][a-z0-9_]*$`, MUST be stable within a dataset version, and MUST NOT be
@@ -292,10 +333,9 @@ full timestamp is required.
 The root Catalog links to each selected dataset Collection. A dataset Collection
 links to its Items and MAY expose documentation, styles, or other collection-wide
 metadata as Collection assets when permitted by STAC.
-For an Itemless `StaticRasterDataset`, `stac/items/` is omitted and the COG is a
-Collection asset. For a spatially tiled static dataset, `stac/items/` and the
-corresponding tile COGs are present. `lookup.json` is emitted only when required
-by the compatibility policy.
+For the SRTM `StaticRasterDataset`, `stac/items/` is omitted and the COG is a
+Collection asset. `lookup.json` is emitted only when required by the
+compatibility policy.
 
 ## 7. Curated authoring metadata
 
@@ -320,7 +360,6 @@ by the compatibility policy.
   semantics.
 - **META-005:** Curated fields and source-manifest fields MUST be validated before
   any source raster is transformed.
-
 ### 7.2 Authoring format decision
 
 Two formats were evaluated:
@@ -405,6 +444,15 @@ the old shape for `/metadata`; this table defines the target authority.
   mapping to that reviewed axis and MUST NOT silently define or override its
   calendar, precision, origin, endpoint inclusion, instant/interval meaning, or
   aggregation period.
+- **META-009:** Curated PaleoCAR v3 metadata MUST define reviewed semantic roles
+  and required pairings for estimate and uncertainty products without embedding
+  source paths. The resolved source manifest MUST map those roles to exact
+  source URIs and checksums. Product selection MUST be declarative and MUST NOT
+  depend on filename convention or require a code or schema change. Changing a
+  selected product MUST create a new immutable release. If science review finds
+  that the change alters the scientific quantity or dataset version rather than
+  correcting its representation, publication MUST require a reviewed dataset
+  identifier or version decision.
 
 Examples illustrate the ambiguity: LBDA's `-6` to `6` reads like a scientific or
 display domain; SRTM's `0` to `4500` reads like a display range; PaleoCAR v2's
@@ -490,11 +538,9 @@ reviewed specification change and compatibility fixtures.
   and pinned
   [Datacube temporal dimension](https://github.com/stac-extensions/datacube/tree/v2.3.0#temporal-dimension-object).
 - **STAC-012:** A `StaticRasterDataset` with no Items MUST publish its COGs in
-  Collection `assets` and MUST omit `item_assets`. A static dataset MAY instead
-  use spatial Items only when a reviewed Item datetime is scientifically
-  meaningful; that datetime describes the asset and MUST NOT imply a temporal
-  raster-band axis. Static Band names MUST identify variables or other reviewed
-  non-temporal bands, not synthetic timesteps. This uses STAC's
+  Collection `assets` and MUST omit `item_assets`. Static Band names MUST
+  identify variables or other reviewed non-temporal bands, not synthetic
+  timesteps. This uses STAC's
   [standalone Collection and Collection asset model](https://docs.ogc.org/cs/25-004/25-004.html#standalone-collections).
 
 Schema validation alone is insufficient. Section 17 requires opening the bytes
@@ -540,8 +586,7 @@ skope:uncertainty:
   ranges.
 - **SKOPE-003:** Every `skope:variables` key MUST equal a Datacube variable and
   a data-asset key in the same Collection: an `item_assets` key for a temporal
-  or spatially tiled static dataset, or a Collection `assets` key for an
-  Itemless static dataset.
+  dataset or a Collection `assets` key for a static dataset.
 - **SKOPE-004:** Every non-null `style_asset` MUST equal a key in the same
   Collection's `assets` map. The referenced asset MUST resolve within the
   dataset release, MUST NOT escape the release path, and MUST declare a JSON
@@ -726,7 +771,9 @@ Adopting these requirements does not by itself establish Portolan conformance.
 - **COG-012:** `INTERLEAVE=BAND` and `INTERLEAVE=TILE` MUST be benchmarked with
   representative one-timestep tile reads, multi-timestep extraction reads, file
   sizes, request counts, and supported GDAL/TiTiler versions before one becomes
-  the profile default. GDAL added these modes in 3.11 and describes their
+  the profile default. The benchmark MUST follow the staged representative-data
+  plan in Section 19 rather than generating every candidate layout for every
+  dataset. GDAL added these modes in 3.11 and describes their
   different access layouts in its
   [COG creation options](https://gdal.org/en/stable/drivers/raster/cog.html#creation-options).
 
@@ -762,6 +809,13 @@ The GDAL driver documents `BLOCKSIZE=512`, automatic overview generation, and
   physical values computed as `encoded * scale + offset`; reviewed scientific
   valid domains; and visualization rescale ranges. A value or range MUST NOT be
   copied between spaces without an explicit labeled conversion and scope.
+- **COG-016:** The PaleoCAR v3 reference build MUST preserve each selected
+  source product's inspected datatype, nodata, scale, and offset;
+  current source inspection therefore establishes `UInt32` as the provisional
+  output datatype. A `UInt16` override MAY be approved only per variable after
+  EXP-004 proves exact representability and measurable operational benefit.
+  Nontrivial scale/offset packing, rounding, or other lossy quantization is not
+  part of that experiment and MUST require separate science review.
 
 A dataset-wide UInt16 switch is insufficient because LBDA contains negative
 values, PaleoCAR variables have different value distributions and units, and
@@ -1010,11 +1064,20 @@ transaction. The root manifest supplies an application-level commit protocol.
   can be validated independently of an API image. Image-build generation MAY
   remain temporarily as a compatibility step but MUST consume only validated
   release inputs.
-- **API-008:** A static dataset MUST NOT acquire scientific temporal metadata to
-  satisfy the legacy lookup contract. If SRTM requires a synthetic time key for
-  initial API compatibility, that key MUST be an explicitly labeled, versioned,
-  and tested compatibility-policy value; it MUST NOT be serialized as STAC
-  temporal authority and SHOULD be deprecated with the legacy API shape.
+- **API-008:** A static dataset MUST NOT acquire a temporal raster axis merely to
+  satisfy the legacy lookup contract. SRTM's initial compatibility projection
+  MUST use `2000` as its UI and lookup selection key, derived from the reviewed
+  primary acquisition year, while preserving the full acquisition interval in
+  STAC. The key MUST NOT be serialized as a temporal COG band name. The
+  unexplained legacy `2009` key MUST be treated as deprecated compatibility
+  input rather than observation or publication authority.
+- **API-009:** The initial PaleoCAR v3 compatibility projection MUST expose the
+  legacy `gdd_may_sept` identifier as an alias of canonical
+  `gdd_maize_may_sept`. It MUST preserve `ppt_annual`, `ppt_may_sept`, and
+  `ppt_water_year` directly because those identifiers remain canonical. The
+  alias MUST NOT appear as a thirteenth STAC variable or duplicate data asset,
+  and requests through either GDD identifier MUST resolve to identical bytes,
+  bands, and results.
 
 The current API depends on dataset-level CRS/transform for request-size checks,
 dataset-level temporal bounds for default extraction, and lookup entries for
@@ -1070,14 +1133,14 @@ is accepted. Together they cover every normative MUST in this proposal.
 | AT-001 | Validate good and bad curated fixtures; reject every observed field and preserve curated input unchanged. | AUTH-003, META-001, META-003, META-005, META-006, VAL-003 |
 | AT-002 | Migrate fixtures containing every current dataset and variable field; compare reviewed STAC, SKOPE, styles, and compatibility output. | META-006, META-007, STYLE-006, API-002 |
 | AT-003 | Validate SKOPE extension examples, coordinate order/ranges, variable keys, Collection style asset keys and metadata, methodology references, schema identity, and version behavior. | SKOPE-001 through SKOPE-004, SKOPE-006 through SKOPE-008 |
-| AT-004 | Build one Collection per `lbda_v2`, `paleocar_v2`, `paleocar_v3`, and each SRTM alternative; require exactly one dataset profile and reject duplicate or changed identifiers. | ORG-001, ORG-005, ORG-009, STAC-001 through STAC-004 |
+| AT-004 | Build one Collection per `lbda_v2`, `paleocar_v2`, `paleocar_v3`, and `srtm`; require exactly one dataset profile and reject duplicate or changed identifiers. | ORG-001, ORG-005, ORG-009, STAC-001 through STAC-004 |
 | AT-005 | Build aligned temporal Items with every variable asset; reject missing, extra, or duplicate assets and unequal chunk boundaries. | ORG-002 through ORG-004, OBS-001, OBS-003, STAC-005 |
 | AT-006 | Validate deterministic IDs, filenames, paths, relative links, relocation, and serialization by two builds with identical explicit volatile inputs and pinned toolchains; demonstrate that changing one declared input changes the recorded build identity. | ORG-006 through ORG-008, REL-001, REL-003 through REL-005, REL-008, OBS-010 |
 | AT-007 | Validate positive regular steps, exact endpoints, unique monotonic timesteps, counts, every source/output band description, ordered STAC Band names, and full `cube:dimensions.time.values`; reject missing, shuffled, duplicated, and cross-chunk repeated names. | OBS-004 through OBS-006, STAC-011, API-004, API-005 |
 | AT-008 | Reject non-finite statistics, all-nodata bands without policy, nodata collisions, invalid scale/offset, overflow, truncation, and incompatible per-variable encodings. | OBS-007 through OBS-009, COG-013, COG-014 |
 | AT-009 | Validate COG tiling, internal overviews, lossless compression, CRS/geotransform, band encoding, descriptions, and no `.ovr` or `.aux.xml`. | COG-001 through COG-003, COG-005 through COG-008, COG-010, COG-011 |
 | AT-010 | Recompute final per-band statistics from native encoded pixels and compare embedded minimum, maximum, mean, standard deviation, valid percent, and STAC Raster metadata. | COG-004, COG-008, STAC-008, VAL-006 |
-| AT-011 | Benchmark one-timestep tiles and multi-timestep extraction for block sizes and BAND/TILE/PIXEL interleave; record compatibility and select no default without results. | COG-012 |
+| AT-011 | Benchmark one-timestep tiles and multi-timestep extraction for block sizes and BAND/TILE/PIXEL interleave using the staged representative-data plan; record compatibility and select no default without results. | COG-012, EXP-002, EXP-003 |
 | AT-012 | Verify STAC asset media type, role, Projection fields, Raster fields, multihash checksum, byte size, and rejection of `proj:epsg` and `titiler:*` authority fields. | STAC-006 through STAC-010, OBS-011, COG-009 |
 | AT-013 | Generate continuous and categorical style fixtures; reject invalid ranges, semantics, references, URLs, WMS names, and private paths. | STYLE-001 through STYLE-003, STYLE-005 |
 | AT-014 | Freeze a validated plan before writing, reject writer input from any other state, construct a separate final observation after byte inspection, reject serializer access to planned facts, and reject mutation of either state. | AUTH-001, AUTH-002, OBS-012, OBS-013 |
@@ -1090,10 +1153,15 @@ is accepted. Together they cover every normative MUST in this proposal.
 | AT-021 | Preflight all four datasets with one late failure; assert no release or scratch output and actionable context for every failure. | OBS-002, VAL-001, VAL-002, VAL-004 |
 | AT-022 | Validate every STAC object offline, resolve every link after relocating the release, and detect byte/STAC/lookup/manifest disagreement. | REL-002, REL-007, VAL-005 through VAL-008 |
 | AT-023 | Validate source manifest identity, URIs, complete checksums, source-band mappings, and per-variable encodings while rejecting descriptive or scientific temporal semantics; calculate and freeze a missing upstream checksum before transformation. | META-004, META-008, OBS-001, OBS-011 |
-| AT-024 | Rehearse all migration phase gates; require retained fixtures and reports, complete compatibility checks, unchanged legacy bytes, whole-release preflight before transformation, and proven replacement paths before legacy removal. | MIG-001 through MIG-005 |
-| AT-025 | Validate standalone and spatial-Item static fixtures: derive spatial extent from COGs, reject temporal band names and invented dates, require Collection assets when Itemless, and exercise an explicitly labeled legacy compatibility key without publishing it as STAC time. | STAC-004, STAC-012, API-008 |
+| AT-024 | Rehearse all migration phase gates; require retained fixtures and reports, complete compatibility checks, unchanged legacy bytes, whole-release preflight before transformation, and proven replacement paths before legacy removal. | MIG-001 through MIG-006 |
+| AT-025 | Validate the single-COG SRTM fixture: derive spatial extent from its bytes, reject spatial Items and invented dates, require a Collection asset and `srtm_elevation` band name, preserve the reviewed 2000 acquisition interval in STAC, exercise the `2000` compatibility key without treating it as a temporal band, reject `2009` as observation authority, and record generation, validation, transfer, tile, and window-read limits. | ORG-010, ORG-011, STAC-004, STAC-012, API-008 |
 | AT-026 | Run each Phase 0 experiment in an isolated temporary location; verify it cannot write a manifest, publish a release, modify legacy bytes, or become a production dependency. | EXP-001 |
 | AT-027 | Test scaled-integer fixtures whose native and physical ranges differ; reject unlabeled or unconverted reuse among native statistics, physical values, scientific domains, and visualization ranges. | COG-015, META-006, META-007, STYLE-002 |
+| AT-028 | Generate the temporal benchmark matrix from representative variables only; compare cold and warm tiles, slider sequences, polygon extractions, concurrency, range traffic, resources, output size, build time, and object count; verify identical scientific results and document selection against the declared decision rule. | EXP-002, EXP-003 |
+| AT-029 | Resolve the official CGIAR-CSI Version 4.1 available-tile index for the reviewed SRTM footprint, distinguish published tiles from expected absent ocean cells, stream and freeze every published-tile checksum, assemble the candidate raster with reviewed deterministic nodata for absent cells, and compare its grid, coverage, nodata, and pixels with the legacy copy. Reject a missing indexed tile and any unreviewed substitution with NASA SRTM or another product/version. | META-004, OBS-002, OBS-011, MIG-004, MIG-006 |
+| AT-030 | Build PaleoCAR v3 fixtures with exactly the twelve canonical variables, validate every source-folder-to-variable mapping, reject the four-variable and raw S3-spelling inventories, emit the `gdd_may_sept` compatibility alias without a duplicate STAC variable or asset, and prove both GDD identifiers return identical results. | ORG-012, API-003, API-009 |
+| AT-031 | Select paired PaleoCAR v3 estimate and uncertainty source roles entirely through curated policy and resolved source mappings; switch a fixture from the scaled pair to the unscaled pair without code or schema changes; require a new release identity and checksums, retain the earlier release unchanged, reject mixed or undocumented pairings, and require an explicit dataset-version review when semantics change. | META-009, REL-006 |
+| AT-032 | Build source-preserving `UInt32` and candidate `UInt16` COGs for representative PaleoCAR v3 estimate and uncertainty variables; scan every valid source value before conversion; reject overflow, truncation, nodata collision, or any pixel/API result difference; and report compressed size, range traffic, memory, tile and extraction latency, and build time before approving a per-variable override. | COG-013, COG-014, COG-016, EXP-004 |
 
 ## 19. Migration plan
 
@@ -1102,14 +1170,47 @@ decisions are approved. Each production phase produces reviewable tests and
 documentation before the next phase depends on it.
 
 0. **Decision-support experiments.** Build disposable fixtures, one-off
-   prototypes, and benchmarks needed to decide temporal chunking, SRTM layout,
-   interleave, compression, block size, and tool compatibility. Experimental
-   outputs are not releases and are never selectable by a registry.
+   prototypes, and benchmarks needed to decide temporal chunking and validate
+   SRTM single-COG viability, interleave, compression, block size, and tool
+   compatibility. Experimental outputs are not releases and are never
+   selectable by a registry.
 
 - **EXP-001:** Phase 0 work MUST run outside production pipeline and publication
   paths, MUST use read-only source data, MUST NOT write dataset or root release
   manifests, MUST NOT modify legacy artifacts, and MUST NOT become a production
   dependency without approval through the applicable implementation phase.
+- **EXP-002:** The temporal chunk experiment MUST initially generate full-grid,
+  full-temporal-range variants of a representative continuous PaleoCAR variable
+  at chunk sizes of 1, 25, 100, and 250 timesteps using `INTERLEAVE=BAND`. It
+  MUST use a representative categorical PaleoCAR variable to test enough chunks
+  to detect datatype, resampling, or access-pattern differences. It MAY use
+  `lbda_v2` as a file-open-overhead control. It MUST NOT generate all candidate
+  layouts for every variable or dataset, and SRTM MUST be evaluated separately
+  as a static raster.
+- **EXP-003:** After the initial experiment, only the best two temporal chunk
+  candidates MUST advance to `INTERLEAVE=TILE` comparison. Selection MUST
+  prioritize interactive one-timestep map-tile latency, subject to documented
+  guardrails for multi-timestep polygon extraction latency, peak memory, reader
+  compatibility, range-request bytes and count, release object count, output
+  size, and build time. Tests MUST cover cold and warm tiles at overview and
+  native-resolution zooms; adjacent 12- and 50-timestep slider sequences; 10-,
+  100-, 500-, and full-range extractions over small, medium, and large polygons;
+  and representative concurrency. Scientific results MUST agree across layouts.
+- **EXP-004:** The PaleoCAR v3 datatype experiment MUST use the
+  source-preserving `UInt32` output as its reference. It MUST scan the full valid
+  value domain of every variable considered for `UInt16`, reserve a
+  non-colliding nodata value, compare decoded pixels and current tile,
+  extraction, and summary-statistic results exactly, and measure compressed
+  size, range-request traffic, peak memory, latency, and build time. A passing
+  experiment MAY recommend a `UInt16` override only for the variables actually
+  proven and measured; it MUST NOT enable a dataset-wide conversion switch.
+
+`paleocar_v2/gdd_may_sept` is the initial continuous `int16` benchmark
+candidate and `paleocar_v2/maize_farming_niche` is the initial categorical
+`uint8` candidate. These choices exercise the approximately 2,000-band,
+1,560-by-1,440 grid that dominates the mixed tile and extraction tradeoff.
+Benchmark artifacts are disposable evidence, not releases, and SHOULD be
+removed after their measurements and toolchain identity are recorded.
 
 1. **Schemas and typed curated metadata.** Define versioned curated, source
    manifest, SKOPE, style, dataset-manifest, and root-manifest schemas. Create
@@ -1146,6 +1247,19 @@ documentation before the next phase depends on it.
   preflight before any transformation starts.
 - **MIG-005:** Legacy mutation paths and `dataset-facts.json` MUST be removed only
   after the STAC-derived registry and integrity manifests pass acceptance tests.
+- **MIG-006:** SRTM migration MUST regenerate the candidate COG from a complete,
+  checksummed inventory of every official CGIAR-CSI SRTM Version 4.1 GeoTIFF
+  source tile listed as available within the reviewed footprint, obtained
+  through the
+  [official CGIAR download manager](https://bigdata.cgiar.org/wp-content/uploads/gestordescargas/);
+  it MUST NOT use the assembled legacy COG as its source. Grid cells omitted by
+  the official available-tile index MUST be recorded explicitly and filled only
+  according to a reviewed deterministic nodata policy; an indexed tile that
+  cannot be retrieved MUST fail preflight. Preflight MUST compare the regenerated
+  source mosaic with the legacy copy and report grid, CRS, footprint, nodata,
+  and pixel differences. NASA SRTM, NASADEM, or another CGIAR version MUST NOT
+  be substituted without a reviewed scientific dataset-version and identifier
+  decision.
 
 ## 20. Alternatives considered
 
@@ -1196,11 +1310,9 @@ named owner accepting the result.
 
 | Decision | Alternatives | Evidence available | Recommended default | Needed experiment or input | Consequence of deferral |
 | --- | --- | --- | --- | --- | --- |
-| Exact temporal chunk policy | One timestep; fixed count such as 100; target byte size | Current pipeline uses at most 100 bands; API groups reads by file | Fixed count as test baseline, not final policy | Benchmark tile and extraction access on all temporal datasets | COG filenames and Item boundaries cannot be finalized |
-| SRTM organization | Single Collection asset; one spatial Item per tile | Source is one very large single-band raster; current API expects one lookup timestep | Test single optimized COG first, retain tiling fallback | Measure build resources, range reads, TiTiler, transfer, and extraction | SRTM layout and lookup generation remain provisional |
-| SRTM temporal representation | Reviewed acquisition/observation time; unknown `[null, null]`; synthetic legacy key only | SRTM is scientifically static for this API, while the legacy registry and lookup expose a year | Use reviewed evidence when available; otherwise `[null, null]` in STAC and isolate any synthetic key in compatibility policy | Science review of source documentation plus product review of legacy client behavior | Static STAC and compatibility lookup cannot be finalized |
-| PaleoCAR v3 canonical variables | Four registry IDs; twelve ingest IDs; reviewed renamed or reduced set | Registry has `ppt_water_year`, `ppt_may_sept`, `ppt_annual`, `gdd_may_sept`; ingest has cotton, maize, and wheat GDD for annual, May-September, and water-year periods plus `ppt_annual`, `ppt_maysept`, and `ppt_wateryear` | Treat neither inventory as canonical until reviewed | Science owners must select variables, stable IDs, aliases, descriptions, units, and compatibility disposition | OBS-001 cannot pass and the Collection schema cannot be finalized |
-| Per-variable encodings | Preserve source; scaled integer; floating point | Current dataset-wide UInt16 switch lacks range and nodata proof | Preserve losslessly unless a variable-specific profile is approved | Domain review and value/nodata histograms for every variable | Size estimates and exact checksums remain unknown |
+| Exact temporal chunk policy | One timestep; fixed counts of 25, 100, or 250; target byte size | Temporal PaleoCAR rasters are approximately 1,900-2,000 bands on a 1,560-by-1,440 grid; tile requests read one band while extraction groups many requested bands by file | Use 100 timesteps as a provisional baseline only; choose from the staged experiment using tile latency with extraction and operational guardrails | Run EXP-002 and EXP-003 on representative PaleoCAR variables; do not reproduce every layout for every dataset | COG filenames and Item boundaries cannot be finalized |
+| PaleoCAR v3 source-product semantics | Use unscaled prediction/deviation pair; scaled pair; publish both as explicit variants | Each of twelve S3 quantity directories contains `prediction`, `prediction_scaled`, `pi_deviation`, and `pi_deviation_scaled`; current ingest selects only `prediction_scaled`; TIFF headers declare no explanatory scale, offset, unit, or statistics, and matched samples show scientifically different values | Provisionally select the paired `prediction_scaled` and `pi_deviation_scaled` products, but block production publication until science review; express the choice through META-009 so it is reversible in a new release | Dataset authors or science owners must document the scaling transformation, meaning and confidence level of `pi_deviation`, units, required pairings, and intended best estimate | Source mappings, uncertainty assets, encoding policy, and release content cannot be finalized |
+| PaleoCAR v3 `UInt16` relevance | Preserve source `UInt32`; lossless per-variable `UInt16` | `UInt16` can reduce storage, range traffic, and memory, but current source files lack complete statistics and the dataset-wide switch provides no range or nodata proof | Use source-preserving `UInt32`; permit only per-variable exceptions that pass EXP-004 | Full-domain scans and representative COG, tile, extraction, and summary benchmarks | Releases can proceed with larger `UInt32` outputs; only the optional optimization is deferred |
 | SKOPE schema canonical URI | `schemas.openskope.org`; repository-hosted URI; embedded local URI | No public schema host exists | Intended `https://schemas.openskope.org/stac/skope/v1.0.0/schema.json` | Ownership, TLS, permanence, and release process decision | Local validation works, but public extension cannot be claimed |
 | Style asset format | Rendering 2.0; standalone SKOPE JSON; both through adapter | Rendering is Pilot; current metadata has TiTiler names and comma-delimited styles | Standalone narrow JSON plus future Rendering adapter | UI/TiTiler interoperability prototype | Style serialization remains provisional |
 | Contacts representation | Provider description/URL; Contacts extension; linked document | Current contacts are unstructured; STAC Provider has no core email field | Provider URL plus preserved description initially | Privacy and maintainer review; extension maturity review | Contact migration requires manual fixture approval |
@@ -1213,17 +1325,8 @@ named owner accepting the result.
 | Grid comparison tolerance | Fixed numeric epsilon; pixel-relative; CRS-unit-aware | PaleoCAR source transforms differ at floating representation scale | CRS-unit-aware tolerance capped at a small fraction of a pixel | Test real headers and reprojection libraries across four datasets | Source preflight rules cannot be finalized |
 | Scientific category vocabulary | Preserve free text; SKOPE list; external ontology identifiers | Current `class` values are inconsistent and undocumented | Preserve source terms with warnings | Domain-owner vocabulary review | Category filtering remains non-portable |
 
-The PaleoCAR v3 decision concerns these exact current inventories:
-
-- Registry: `ppt_water_year`, `ppt_may_sept`, `ppt_annual`, `gdd_may_sept`.
-- Ingest manifest: `gdd_cotton_annual`, `gdd_cotton_maysept`,
-  `gdd_cotton_wateryear`, `gdd_maize_annual`, `gdd_maize_maysept`,
-  `gdd_maize_wateryear`, `gdd_wheat_annual`, `gdd_wheat_maysept`,
-  `gdd_wheat_wateryear`, `ppt_annual`, `ppt_maysept`, and `ppt_wateryear`.
-
-Differences such as `may_sept` versus `maysept` and `water_year` versus
-`wateryear` are not assumed to be aliases until science and compatibility
-review confirms their meaning.
+The canonical PaleoCAR v3 quantity inventory and normalized identifiers are
+resolved in Section 5.4. Only the scientific source-product choice remains open.
 
 ### 21.1 Decision ownership
 
@@ -1236,8 +1339,8 @@ methodology, citations, provenance; and whether small grid differences are
 scientifically equivalent.
 
 Engineering owns temporal chunk and interleave benchmarks, COG block and
-compression choices, SRTM tiling mechanics, deterministic toolchains, and
-STAC-GeoParquet experiments. Operations owns release identifiers, local
+compression choices, SRTM single-COG operational validation, deterministic
+toolchains, and STAC-GeoParquet experiments. Operations owns release identifiers, local
 pointers, and object-storage cleanup. Product owns compatibility duration and
 legacy static-key behavior. Grid equivalence, per-variable encoding, SRTM
 temporal meaning, and any user-visible identifier change require joint review
@@ -1254,17 +1357,17 @@ material, not an implementation commitment.
 | AUTH-001 to AUTH-003 | Authority matrix | Typed model and serializers | Mutation/conflict fixtures, curated immutability | 1-4 |
 | ORG-001 to ORG-004 | STAC authority | Dataset STAC builder | Collection count and aligned Item fixtures | 4 |
 | ORG-005 to ORG-008 | Curated identity and release format | Identifier/path library | Pattern, traversal, determinism, relocation tests | 1, 4 |
-| ORG-009 | Dataset profile declaration | Curated schema and STAC builder | Profile exclusivity and profile-specific fixtures | 1, 4 |
+| ORG-009 to ORG-012 | Dataset profile and variable declarations | Curated schema and STAC builder | Profile exclusivity, SRTM constraints, and exact PaleoCAR v3 inventory fixtures | 0, 1, 4 |
 | REL-001 to REL-008 | Release format | Release assembler | Layout, link, controlled-input determinism, immutability, mirror checks | 4-7 |
-| META-001 to META-008 | Curated metadata | Curated compiler and source-manifest parser | Schema, source mapping, and full legacy field migration fixtures | 1, 2, 8 |
+| META-001 to META-009 | Curated metadata | Curated compiler and source-manifest parser | Schema, source mapping, selectable product-role pairs, and full legacy field migration fixtures | 1, 2, 8 |
 | STAC-001 to STAC-012 | STAC authority | STAC adapters and builder | Pinned schemas, band-time sequence, static profile, links, byte comparison | 4 |
 | SKOPE-001 to SKOPE-008 | SKOPE extension | SKOPE adapter | Local schema and referential-integrity tests | 1, 4 |
 | STYLE-001 to STYLE-006 | Style assets | Style compiler and compatibility adapter | Schema, range, portability, and API projection tests | 1, 4, 8 |
 | OBS-001 to OBS-013 | Typed observation | Preflight, build plan, and final observation | Source headers, temporal/grid invariants, state and freeze tests | 2, 3 |
-| COG-001 to COG-015 | Byte-level COG authority | COG writer and byte inspector | OGC validator, GDAL inspection, value-space statistics, benchmarks | 3 |
+| COG-001 to COG-016 | Byte-level COG authority | COG writer and byte inspector | OGC validator, GDAL inspection, value-space statistics, benchmarks | 3 |
 | MAN-001 to MAN-009 | Integrity manifests | Dataset/root manifest writers | JSON Schema, inventory, checksum, entrypoint, forbidden-field tests | 6, 7 |
 | TXN-001 to TXN-010 | Root manifest and immutable storage | Local/object publisher | Failure injection, retry, visibility, cleanup tests | 7 |
-| API-001 to API-008 | STAC plus environment policy | Registry and lookup generators | Golden `/metadata`, temporal/static resolver, reproducibility tests | 5, 8 |
+| API-001 to API-009 | STAC plus environment policy | Registry and lookup generators | Golden `/metadata`, temporal/static resolver, aliases, and reproducibility tests | 5, 8 |
 | VAL-001 to VAL-008 | All authorities | Validation orchestrator | Pass isolation, structured findings, end-to-end conformance | 1-8 |
-| EXP-001 | Experimental isolation | Phase 0 harness | Path, mutation, manifest, and dependency guards | 0 |
-| MIG-001 to MIG-005 | Approved migration plan | Migration orchestration | Phase gates and four-dataset compatibility suite | 1-10 |
+| EXP-001 to EXP-004 | Experimental isolation and benchmark selection | Phase 0 harness | Path and mutation guards plus AT-011, AT-028, and AT-032 performance matrices | 0 |
+| MIG-001 to MIG-006 | Approved migration plan | Migration orchestration | Phase gates, SRTM source reconstruction, and four-dataset compatibility suite | 1-10 |
