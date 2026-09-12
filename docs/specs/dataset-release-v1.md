@@ -108,6 +108,22 @@ their variables do not currently demonstrate aligned temporal coverage.
 : An immutable package that contains a root STAC Catalog and one or more dataset
   releases selected as a unit.
 
+**Release declaration graph**
+: The root and dataset authoring `science.toml` documents plus the checksummed
+  canonical inputs they reference. It is the authoritative declarative input
+  compiled into a `ValidatedBuildPlan`.
+
+**Release request**
+: An operational command to validate, build, or publish a resolved release
+  declaration. Requester, target environment, priority, approval, scheduling,
+  and retry data do not affect release identity unless they change the resolved
+  declaration.
+
+**Workflow execution**
+: One durable orchestration of a release request. It may have multiple platform
+  runs and retried step attempts while retaining one application-level request
+  identity.
+
 **Publication commit marker**
 : A valid root `release-manifest.json` written last. Its presence and validity
   indicate that a root release is complete and eligible for selection.
@@ -149,6 +165,7 @@ their variables do not currently demonstrate aligned temporal coverage.
 
 | Information | Authority |
 | --- | --- |
+| Project identity, release declaration and selected dataset composition | Root and dataset `science.toml` release declaration graph |
 | Dataset descriptions and citations | Curated input, published through STAC Collection |
 | Variable descriptions and units | Curated input, published through STAC |
 | CRS, transform, shape and spatial extent | Generated COG and corresponding STAC projection fields |
@@ -158,6 +175,7 @@ their variables do not currently demonstrate aligned temporal coverage.
 | Checksums and byte sizes | STAC File Info plus release manifest |
 | Source provenance | Release manifest and STAC provenance links |
 | Publication completion | Root release manifest |
+| Bootstrap metadata and important artifact entrypoints | Published root and dataset `science.toml` |
 | Time-to-band lookup | Derived index |
 | API metadata | Derived compatibility projection |
 | UI presentation hints | Versioned SKOPE extension and style assets |
@@ -287,9 +305,11 @@ full timestamp is required.
 
 ```text
 <release-id>/
+  science.toml
   catalog.json
   release-manifest.json
   <dataset-id>/
+    science.toml
     release-manifest.json
     stac/
       collection.json
@@ -306,17 +326,26 @@ full timestamp is required.
 - **REL-001:** Root and dataset STAC links and asset `href` values MUST be
   relative within the release. The release MUST remain valid after relocation
   without rewriting links.
-- **REL-002:** `catalog.json`, each `stac/collection.json`, all Item JSON, COGs,
-  and style assets are normative published artifacts. `lookup.json` and API
-  compatibility metadata are derived artifacts.
+- **REL-002:** Root and dataset `science.toml`, `catalog.json`, each
+  `stac/collection.json`, all Item JSON, COGs, and style assets are normative
+  published artifacts. `lookup.json` and API compatibility metadata are
+  derived artifacts. Descriptive facts compiled from authoring `science.toml`
+  into published STAC remain governed by the lifecycle authority rules in
+  Section 4.
 - **REL-003:** A dataset manifest MUST be located at
   `<dataset-id>/release-manifest.json`; the publication commit marker MUST be
   `<release-id>/release-manifest.json`.
 - **REL-004:** Serialization MUST be deterministic: UTF-8, LF line endings,
   stable key and array ordering where order is not semantically defined, no
   non-finite JSON values, and one trailing newline for text files.
-- **REL-005:** A release identifier MUST be stable and safe as one path segment.
-  Its final format is unresolved in Section 21.
+- **REL-005:** A root release identifier MUST use CalVer in the form
+  `skope-r-YYYY.MM.DD` for the first approved declaration on a UTC date and
+  `skope-r-YYYY.MM.DD-N`, where `N` starts at `2`, for any later declaration on
+  that date. The date MUST be a valid Gregorian date, MUST equal the UTC date of
+  the explicitly supplied `release.created` value, and MUST represent approval
+  and freezing of the declaration rather than the start time of a build retry.
+  The identifier MUST be assigned explicitly and MUST NOT be synthesized from
+  an implicit wall clock.
 - **REL-006:** A released path MUST be immutable; changed bytes require a new
   release identifier.
 - **REL-007:** `items.parquet` MAY be generated experimentally, but is deferred
@@ -325,10 +354,11 @@ full timestamp is required.
   the dataset manifest. This follows Portolan's current recommendation for a
   [STAC-GeoParquet item mirror](https://github.com/portolan-sdi/portolan-spec/blob/main/specs/portolan/formats.md#raster).
 - **REL-008:** Byte-for-byte reproducibility MUST be evaluated with identical
-  source bytes, curated and source manifests, build policy, release identifier,
-  supplied creation timestamp, producer revision, and pinned GDAL, compression,
-  operating-system, and serialization toolchain. Volatile values MUST be
-  explicit build inputs; a build MUST NOT read the wall clock implicitly.
+  root and dataset authoring `science.toml`, source bytes, source manifests,
+  build policy, release identifier, supplied creation timestamp, producer
+  revision, and pinned GDAL, compression, operating-system, and serialization
+  toolchain. Volatile values MUST be explicit build inputs; a build MUST NOT
+  read the wall clock implicitly.
 
 The root Catalog links to each selected dataset Collection. A dataset Collection
 links to its Items and MAY expose documentation, styles, or other collection-wide
@@ -337,11 +367,160 @@ For the SRTM `StaticRasterDataset`, `stac/items/` is omitted and the COG is a
 Collection asset. `lookup.json` is emitted only when required by the
 compatibility policy.
 
+### 6.1 Release bootstrap descriptors
+
+The release declaration and published bootstrap documents use the emerging
+`science.toml` schema with root document `schema = 1`. Because that schema is
+not yet published and has no compatibility obligation, its first public
+version is designed to model common research-object concepts directly rather than put
+them in an SKOPE extension table. SKOPE layout and conformance rules belong to
+the `openskope-dataset-release:v1` filesystem profile. This proposal defines
+the required concepts but does not create the production `science.toml` schema.
+
+The optimized conceptual instance shape is:
+
+```toml
+schema = 1
+status = "stable"
+
+[project]
+id = "paleocar_v3"
+name = "PaleoCAR: SW USA Paleoclimate Reconstruction"
+description = "A reviewed human discovery summary."
+version = "3"
+kind = "data-project"
+filesystem = "openskope-dataset-release:v1"
+
+[release]
+id = "skope-r-2026.09.12"
+created = "2026-09-12T15:45:30Z"
+identity_profile = "openskope-release-declaration-v1"
+digest_algorithm = "sha256"
+declaration_digest = "a8c92e7d4b131029ea9fd04cd7d8ba3131d058cdaf5127add24dc68c175dc13f"
+
+[stewardship]
+level = "managed"
+
+[[contributors]]
+kind = "person"
+name = "Example Contributor"
+roles = ["creator"]
+orcid = "https://orcid.org/0000-0002-1825-0097"
+
+[artifacts.stac]
+href = "stac/collection.json"
+media_type = "application/json"
+roles = ["metadata", "catalog"]
+status = "present"
+canonical = true
+
+[artifacts.release_manifest]
+href = "release-manifest.json"
+media_type = "application/json"
+roles = ["integrity"]
+status = "present"
+canonical = true
+```
+
+A root instance uses the same schema and adds keyed child research objects:
+
+```toml
+[objects.paleocar_v3]
+href = "paleocar_v3/science.toml"
+relation = "contains"
+kind = "data-project"
+```
+
+Dataset-specific variable declarations, temporal semantics, uncertainty, and
+presentation references remain profile-owned fields within the same dataset
+`science.toml`. They need not become universal core fields, but the filesystem
+profile validates them against a pinned schema rather than leaving them as an
+unconstrained extension table. Generic project, release, contributor, artifact,
+and child-object concepts remain first-class core fields.
+
+- **BOOT-001:** A root release MUST contain exactly one `science.toml`, and each
+  dataset release MUST contain exactly one dataset-local `science.toml`.
+  Variable, Item, COG, and style directories MUST NOT contain another release
+  bootstrap descriptor.
+- **BOOT-002:** The root descriptor MUST identify the release profile, root
+  release ID, title, lifecycle status, and stewardship posture; reference
+  `catalog.json` and the root `release-manifest.json`; and enumerate each
+  selected dataset ID, title, and dataset-local `science.toml` path. All paths
+  MUST be release-relative.
+- **BOOT-003:** Each dataset descriptor MUST identify the release profile,
+  containing root release ID, dataset ID, title, description, lifecycle status,
+  stewardship posture, and reviewed persistent contributor and organization
+  identifiers; reference its local `release-manifest.json` and
+  `stac/collection.json`; and use paths relative to the dataset directory. It
+  MUST remain usable when the dataset directory is copied independently and
+  MUST NOT require its parent root descriptor.
+- **BOOT-004:** Authoring `science.toml` MUST be the authority for project and
+  dataset identity, release declaration and composition, lifecycle, stewardship,
+  curated human metadata, canonical input references, and build-profile
+  selection. The release compiler MUST resolve the complete root and dataset
+  hierarchy plus referenced input checksums into one immutable
+  `ValidatedBuildPlan`; a parallel release-plan file MUST NOT define the same
+  facts.
+- **BOOT-005:** A descriptor MAY reference citation, software, stewardship, or
+  other project artifacts using `science.toml` artifact references. The root
+  descriptor SHOULD index the Catalog, root manifest, dataset descriptors, and
+  applicable project citation, software, and stewardship entrypoints. A
+  dataset descriptor SHOULD index its Collection, dataset manifest, generated
+  lookup when present, and applicable citation, methodology, style, and
+  stewardship entrypoints. References MUST be relative or HTTPS, MUST identify
+  whether the artifact is root- or dataset-scoped, and MUST NOT make the
+  descriptor authoritative for the referenced artifact's content. Descriptors
+  MUST NOT enumerate every Item, COG, or manifest inventory member because STAC
+  and release manifests provide those exhaustive indexes.
+- **BOOT-006:** Published root and dataset `science.toml` files MUST be
+  deterministic, immutable resolutions of the authoring declaration graph.
+  They MUST include the resolved release identity and final artifact
+  entrypoints, MUST be checksummed by their containing manifests, and MUST NOT
+  be runtime dependencies for STAC, registry, lookup, tile, extraction, or
+  analysis behavior.
+- **BOOT-007:** Independently of its CalVer release ID, a root release MUST
+  record the full lowercase hexadecimal SHA-256 digest of an RFC 8785 canonical
+  JSON projection of the fully resolved release declaration graph and all
+  referenced build-input checksums. The projection MUST identify itself with
+  `identity_profile = openskope-release-declaration-v1`, apply validated schema
+  defaults, preserve semantically ordered arrays, and normalize unordered
+  collections before serialization. It MUST include the explicit
+  `release.created` value and MUST exclude the release ID, the declaration
+  digest itself, generated output references, generated bytes, staging or host
+  paths, request and workflow metadata, and publication-completion state. See
+  the [JSON Canonicalization Scheme](https://www.rfc-editor.org/rfc/rfc8785.html).
+- **BOOT-008:** Published `science.toml` MAY provide convenient identity and
+  human-discovery summaries compiled from the declaration graph and STAC. Such
+  summaries MUST agree with published STAC. It MUST NOT duplicate raster
+  encoding, grid, spatial or temporal coverage, variable definitions,
+  statistics, checksums, detailed style rules, provenance inventories, or
+  publication-completion state.
+- **BOOT-009:** The first published `science.toml` schema MUST provide
+  first-class typed fields for project ID, name, description, version and kind;
+  release ID, creation time, identity profile, digest algorithm, and full
+  declaration digest; lifecycle and stewardship; person and organization
+  contributors with roles and optional canonical ORCID or ROR URIs; an open
+  keyed collection of typed artifact references; and an open keyed collection
+  of child research-object references. Artifact and object
+  references MUST use one `href` field for relative or HTTPS locations and MUST
+  support media type or kind, roles or relation, lifecycle status, version, and
+  canonical designation where applicable. Generic concepts MUST NOT require an
+  `openskope` extension; the filesystem profile MUST enforce SKOPE-specific
+  hierarchy and release constraints.
+- **BOOT-010:** A retry or reproducibility rebuild of one frozen declaration
+  MUST retain its release ID, creation timestamp, identity profile, and full
+  declaration digest. A published release ID MUST NOT be associated with a
+  different declaration digest; a changed declaration MUST receive a new
+  CalVer identifier before publication even when its intended output bytes are
+  unchanged.
+
 ## 7. Curated authoring metadata
 
 ### 7.1 Content boundary
 
-- **META-001:** There MUST be one curated authoring file per dataset identity.
+- **META-001:** There MUST be one curated authoring `science.toml` per dataset
+  identity. Its `openskope-dataset-release:v1` filesystem profile validation
+  MUST enforce the curated content boundary in this section.
 - **META-002:** Curated files MAY contain titles, descriptions, variable names,
   variable descriptions, units, citations, providers, contacts, method
   summaries, uncertainty explanations, scientific domains, and presentation
@@ -362,18 +541,20 @@ compatibility policy.
   any source raster is transformed.
 ### 7.2 Authoring format decision
 
-Two formats were evaluated:
+Three formats were evaluated:
 
 | Alternative | Advantages | Costs |
 | --- | --- | --- |
 | STAC Collection template in YAML | Familiar STAC names; smaller compiler | Templates contain output-only structure, extension placement, and placeholders; easy to mix observed and curated facts |
-| Separate typed authoring schema compiled to STAC | Strong authority boundary; ergonomic citations, contacts, variables, uncertainty, and UI preferences; no fake observed fields | Requires a compiler and local schema |
+| Separate dataset YAML compiled to STAC | Strong authority boundary and no fake observed fields | Duplicates project identity, artifact indexing, lifecycle, and stewardship already modeled by `science.toml` |
+| Dataset `science.toml` compiled to STAC | One typed project and dataset declaration, extensible artifact index, reusable contributors, and a natural root-to-dataset hierarchy | Requires first-class metadata and research-object fields in the unpublished `science.toml` schema plus a profile-aware compiler |
 
-**Recommendation:** use a separate typed YAML authoring schema compiled to
-STAC. Its vocabulary SHOULD reuse STAC field names where semantics match, but
-the file is not itself a STAC Collection. The compiler owns placement of fields,
-extension declarations, structural links, and observed properties. This follows
-PR 48's useful split-by-dataset direction while making the boundary explicit.
+**Decision:** use each dataset's authoring `science.toml` as the typed curated
+metadata source compiled to STAC. Its vocabulary SHOULD reuse STAC field names
+where semantics match, but the file is not itself a STAC Collection. The
+compiler owns placement of fields, extension declarations, structural links,
+and observed properties. This follows PR 48's useful split-by-dataset direction
+without introducing another dataset metadata file.
 
 ## 8. Current metadata migration
 
@@ -408,8 +589,8 @@ the old shape for `/metadata`; this table defines the target authority.
 | `uncertainty` | SKOPE extension | `skope:uncertainty` | Split summary from an optional methodology document. |
 | `methodSummary` | Existing STAC extension | `processing:lineage` or linked methodology | Processing is Candidate; preserve curated text through an adapter. |
 | `references` | Existing STAC extension | `sci:citation`, `sci:doi`, and links | Unstructured strings require human parsing; do not invent DOIs. |
-| `originator` | STAC core | Collection `providers` | Split people and organizations and assign supported roles through review. |
-| `contactInformation` | Requires human interpretation | Provider URL/description or selected contacts representation | Current free text cannot be parsed reliably. |
+| `originator` | STAC core plus persistent-identifier links | Collection `providers`, Scientific Citation, and reviewed ORCID/ROR links | Split people and organizations, validate canonical identifiers when supplied, and assign supported roles through review. Project contributors are not dataset contributors by inheritance. |
+| `contactInformation` | Requires human interpretation | Reviewed organization-maintained HTTPS contact link | Current free text cannot be parsed reliably. Do not automatically publish legacy personal email, telephone, fax, or postal details. |
 | `sourceUrl` | STAC core | `via`, `derived_from`, or `canonical` link | Relation depends on whether SKOPE is producer, processor, or mirror. |
 | `crs` | Derived and removed | `proj:code` from output bytes | Current values conflict with inspected legacy files in some entries. |
 | `transform` | Derived and removed | `proj:transform` from output bytes | Preserve full measured precision; compare using reviewed tolerances. |
@@ -425,8 +606,8 @@ the old shape for `/metadata`; this table defines the target authority.
 | `units` | Existing STAC extension | Raster band `unit` and Datacube variable `unit` | Empty values remain absent; spelling requires review, not conversion by inference. |
 | `class` | SKOPE extension | `skope:variables.<id>.category` | Current strings are not a validated scientific vocabulary. |
 | `wmsLayer` | Derived and removed | None | Service-specific and stale; do not publish in scientific metadata. |
-| `min` | Requires human interpretation | Observed statistics, scientific domain, or style rescale | The current field does not identify which meaning applies. |
-| `max` | Requires human interpretation | Observed statistics, scientific domain, or style rescale | The current field does not identify which meaning applies. |
+| `min` | Requires human interpretation | No direct migration; reviewed scientific domain or default-style rescale endpoint | Preserve as evidence. Do not copy it into either target field automatically; generated observed statistics come only from bytes. |
+| `max` | Requires human interpretation | No direct migration; reviewed scientific domain or default-style rescale endpoint | Preserve as evidence. Do not copy it into either target field automatically; generated observed statistics come only from bytes. |
 | `visible` | SKOPE extension | `skope:variables.<id>.default_visible` | Presentation only. |
 | `styles` | Style asset | `skope:variables.<id>.style_asset` | Comma-delimited names require review and conversion. |
 | `colormap` | Style asset | Style asset contents | Resolve named palettes to portable definitions or a reviewed vocabulary. |
@@ -453,6 +634,30 @@ the old shape for `/metadata`; this table defines the target authority.
   that the change alters the scientific quantity or dataset version rather than
   correcting its representation, publication MUST require a reviewed dataset
   identifier or version decision.
+- **META-010:** Curated identity records MAY represent a person or organization.
+  A person record MAY contain one canonical
+  [ORCID URI](https://support.orcid.org/hc/en-us/articles/360006897674-Structure-of-the-ORCID-Identifier)
+  and an organization record MAY contain one canonical
+  [ROR URI](https://ror.org/about/faqs/). The compiler MUST validate identifier type
+  and canonical URI syntax, MUST NOT assign a project contributor a dataset role
+  without explicit selection in the dataset authoring file, MUST reject an
+  identifier associated with conflicting names in the same release, and MUST
+  preserve each selected identifier in the published Collection. An
+  organization's canonical ROR URI MAY be its Provider `url`; a person's ORCID
+  URI MAY be emitted as a titled Collection link associated with the reviewed
+  citation.
+- **META-011:** Current contact information MUST be represented by a reviewed,
+  organization-maintained HTTPS URL. Legacy personal email addresses, telephone
+  or fax numbers, postal addresses, and free-form contact blocks MUST NOT be
+  published automatically. `science.toml` MAY identify a canonical
+  `CITATION.cff`, `codemeta.json`, or equivalent identity artifact as an
+  authoring input, but a build MUST resolve and snapshot explicitly selected
+  identities before publication and MUST NOT depend on project files at runtime.
+- **META-012:** Legacy variable `min` and `max` values MUST be retained only as
+  migration evidence and MUST NOT be assigned an observed-range, scientific-domain,
+  or visualization-range meaning automatically. Each variable's scientific
+  domain and default visualization range MUST be reviewed independently; either
+  MAY be absent when evidence is insufficient.
 
 Examples illustrate the ambiguity: LBDA's `-6` to `6` reads like a scientific or
 display domain; SRTM's `0` to `4500` reads like a display range; PaleoCAR v2's
@@ -595,14 +800,32 @@ skope:uncertainty:
   Until that vocabulary is approved, validation reports unknown values as
   warnings and preserves the source term without assigning new semantics.
 - **SKOPE-006:** The intended canonical schema URI is
-  `https://schemas.openskope.org/stac/skope/v1.0.0/schema.json`. Before that URI
-  exists, builds MUST validate against a commit-pinned local schema with the same
-  `$id`; publishing MUST NOT claim public extension availability.
+  `https://api.openskope.org/schemas/stac/v0.1.0/schema.json`. Before that URI
+  serves the approved schema bytes, builds MUST validate against a commit-pinned
+  local schema with the same `$id`; published STAC MUST NOT reference the public
+  extension URI.
 - **SKOPE-007:** Released SKOPE schemas MUST be immutable and versioned with
-  semantic versioning. Breaking field or semantic changes require a new major
-  version.
+  semantic versioning. After `v1.0.0`, breaking field or semantic changes
+  require a new major version. During proposal-stage `0.x` development, any
+  contract change MUST increment the minor version and patch releases MUST NOT
+  change accepted instances or field meaning. `v1.0.0` MUST NOT be published
+  until the extension is approved as stable.
 - **SKOPE-008:** `methodology_href`, when non-null, MUST be relative or HTTPS and
   MUST resolve during release validation.
+- **SKOPE-009:** Versioned SKOPE schemas MUST be served as static files directly
+  by the nginx infrastructure for `api.openskope.org`; schema requests MUST NOT
+  depend on FastAPI or WordPress availability. Exact-version URLs MUST support
+  unauthenticated HTTPS `GET` and `HEAD`, return
+  `Content-Type: application/schema+json`, include
+  `Access-Control-Allow-Origin: *` and
+  `Cache-Control: public, max-age=31536000, immutable`, disable directory
+  listing, and return no schema content for directory URLs.
+- **SKOPE-010:** The repository MUST remain the source authority for schema
+  files, examples, and tests, while `comses/infrastructure` owns nginx routing
+  and static publication. Publication MUST be append-only: an existing version
+  MUST NOT be overwritten unless the candidate checksum is identical. Every
+  previously published version MUST remain retrievable after deployments and
+  rollbacks, and the served bytes MUST match the reviewed repository artifact.
 
 ## 11. Style assets
 
@@ -614,10 +837,13 @@ Three representation choices were evaluated:
 | Standalone JSON style assets | Portable, independently versionable, and naturally checksummed; requires a small schema and adapter. |
 | Fields embedded in the SKOPE extension | Easy for the API but duplicates style documents across Collections and couples metadata to presentation. |
 
-**Recommendation:** use standalone JSON style assets as the initial authority,
-referenced by the narrow SKOPE extension. Evaluate a deterministic adapter to
-[Rendering 2.0.0](https://github.com/stac-extensions/render) after interoperability
-tests; do not make the Pilot extension authoritative yet.
+**Decision:** use standalone JSON style assets as the presentation authority,
+referenced by the narrow SKOPE extension. A deterministic adapter MAY also emit
+[Rendering 2.0.0](https://github.com/stac-extensions/render) as an
+interoperability projection when the mapping is lossless. The Pilot extension
+is not independently authored and is not authoritative. This preserves room
+for SKOPE-specific map styling and legends beyond the Rendering extension while
+still giving standards-oriented clients a portable default where possible.
 
 - **STYLE-001:** Each style asset MUST be valid against a versioned SKOPE style
   schema and MUST declare its schema version, rendering type (`continuous` or
@@ -635,6 +861,22 @@ tests; do not make the Pilot extension authoritative yet.
 - **STYLE-006:** The registry compatibility serializer MAY derive current
   `colormap`, `min`, `max`, and `styles` fields from the selected default style,
   but those compatibility fields MUST NOT become authorities.
+- **STYLE-007:** A style asset MUST be capable of representing a variable's
+  default map rendering and legend, including continuous color stops or
+  categorical value colors, display labels, and nodata transparency, without
+  redefining the variable's scientific semantics or encoded nodata value.
+- **STYLE-008:** When a STAC Rendering projection is emitted, it MUST be
+  generated only from the authoritative style asset, MUST use local STAC asset
+  keys, and MUST agree with every style property that it represents. A property
+  without a lossless Rendering 2.0.0 representation MUST remain in the SKOPE
+  style asset and MUST NOT be approximated silently.
+- **STYLE-009:** A continuous default style MUST contain its exact finite
+  rescale endpoints in physical value space. The map renderer and legend MUST
+  use those endpoints unchanged. Global percentage multipliers, implicit
+  clipping, or other client-side adjustments MUST NOT alter them. When an
+  outlier or percentile policy informs the chosen endpoints, that method and
+  its scope MUST be recorded as style provenance rather than recomputed by the
+  client.
 
 ## 12. Typed observation model
 
@@ -663,13 +905,16 @@ The model represents:
 
 ### 12.2 Lifecycle
 
-The `ValidatedBuildPlan` contains fully preflighted inputs and the intended COG
-encoding and chunk layout. The COG writer consumes only this plan. After every
-COG is written, the byte inspector reopens all outputs and constructs a
-`FinalObservation` from measured byte facts. STAC, lookup, registry, and API
-compatibility serializers consume only the final observation. Manifest
-generation consumes the final observation plus an exhaustive inventory of the
-serialized files and their measured sizes and checksums.
+The release compiler resolves the authoritative root and dataset `science.toml`
+declaration graph, profile-owned metadata, source manifests, referenced input
+checksums, and complete source preflight into the `ValidatedBuildPlan`. That
+plan contains the intended COG encoding and chunk layout, and the COG writer
+consumes only this compiled form. After every COG is written, the byte inspector
+reopens all outputs and constructs a `FinalObservation` from measured byte
+facts. STAC, lookup, registry, and API compatibility serializers consume only
+the final observation. Manifest generation consumes the final observation plus
+an exhaustive inventory of the serialized files and their measured sizes and
+checksums.
 
 ### 12.3 Invariants
 
@@ -868,6 +1113,12 @@ sidecars. Their schemas are conceptually separate and versioned independently.
   "stac_entrypoint": "stac/collection.json",
   "files": [
     {
+      "path": "science.toml",
+      "roles": ["bootstrap", "derived"],
+      "size": 4,
+      "checksum": "12209f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+    },
+    {
       "path": "stac/collection.json",
       "roles": ["stac", "collection"],
       "size": 4,
@@ -922,13 +1173,28 @@ object's measured size and digest as required by MAN-005.
 ```json
 {
   "schema_version": "1.0.0",
-  "release_id": "2026-09-legacy-01",
-  "created": "2026-09-11T00:00:00Z",
+  "release_id": "skope-r-2026.09.12",
+  "created": "2026-09-12T15:45:30Z",
   "status": "complete",
   "producer": {
     "name": "skope-api dataset pipeline",
     "version": "0.1.0",
     "revision": "<git-commit>"
+  },
+  "declaration": {
+    "identity_profile": "openskope-release-declaration-v1",
+    "digest_algorithm": "sha256",
+    "digest": "a8c92e7d4b131029ea9fd04cd7d8ba3131d058cdaf5127add24dc68c175dc13f"
+  },
+  "orchestration": {
+    "provider": "temporal",
+    "request_id": "dataset-release/skope-r-2026.09.12",
+    "namespace": "skope-production"
+  },
+  "bootstrap": {
+    "href": "science.toml",
+    "size": 4,
+    "checksum": "12209f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
   },
   "catalog": {
     "href": "catalog.json",
@@ -952,17 +1218,21 @@ object's measured size and digest as required by MAN-005.
   creation time, complete/prepared status, producer identity and version, source
   references and checksums, a STAC entrypoint path, and one exhaustive `files`
   inventory containing the role, path, size, and checksum of every STAC object,
-  data object, style asset, and derived artifact.
+  data object, style asset, bootstrap descriptor, and derived artifact.
 - **MAN-003:** A root manifest MUST identify the root release, creation time,
-  `complete` status, producer identity and version, root Catalog path/size/checksum,
-  and each selected dataset manifest path/size/checksum.
+  `complete` status, producer identity and version, declaration identity profile,
+  digest algorithm and full digest, root Catalog path/size/checksum, root
+  `science.toml` path/size/checksum, and each selected dataset manifest
+  path/size/checksum. Its release and declaration fields MUST agree with the
+  resolved root `science.toml`.
 - **MAN-004:** Manifests MUST NOT contain CRS, transform, shape, spatial or
   temporal coverage, nodata, datatype, scale, offset, units, or statistics.
 - **MAN-005:** Manifest paths MUST be release-relative and obey ORG-008. Each
   size and checksum MUST match the final object bytes.
 - **MAN-006:** A dataset manifest MUST list all files within its dataset release
-  except itself. The root manifest MUST list the root Catalog and all dataset
-  manifests but MUST NOT attempt to checksum itself.
+  except itself, including its `science.toml`. The root manifest MUST list the
+  root Catalog, root `science.toml`, and all dataset manifests but MUST NOT
+  attempt to checksum itself.
 - **MAN-007:** `dataset-facts.json` MUST be eliminated from the cleanroom target
   architecture and MUST NOT be read by registry or publication tooling.
 - **MAN-008:** A dataset manifest's `complete` status records successful dataset
@@ -971,7 +1241,13 @@ object's measured size and digest as required by MAN-005.
 - **MAN-009:** `stac_entrypoint` MUST resolve to exactly one `files` record with
   `stac` and `collection` roles. File roles MUST come from the manifest schema's
   controlled vocabulary, initially `stac`, `collection`, `item`, `data`,
-  `style`, `derived`, and `lookup`; a file MAY have multiple roles.
+  `style`, `bootstrap`, `derived`, and `lookup`; a file MAY have multiple roles.
+- **MAN-010:** A root manifest MAY record a compact, provider-neutral
+  orchestration reference containing `provider`, application-level
+  `request_id`, and an optional non-secret namespace or endpoint identifier. It
+  MUST NOT embed an orchestration event history, mutable execution status,
+  credentials, queue state, retry counts, or a platform run identifier as the
+  release identity.
 
 ### 14.3 Replacement of `dataset-facts.json`
 
@@ -996,11 +1272,13 @@ object's measured size and digest as required by MAN-005.
   1. generate COGs;
   2. inspect final COG bytes;
   3. construct and freeze the `FinalObservation`;
-  4. generate STAC and derived artifacts;
-  5. complete every validation pass;
-  6. write dataset manifests;
-  7. write the root manifest last; and
-  8. atomically rename the staging directory to a previously absent release
+  4. generate STAC, styles, and derived artifacts and materialize the resolved
+     dataset `science.toml` files;
+  5. materialize the resolved root `science.toml`;
+  6. complete every pre-manifest validation pass;
+  7. write and validate dataset manifests;
+  8. write the root manifest last after final cross-artifact validation; and
+  9. atomically rename the staging directory to a previously absent release
      path.
 - **TXN-002:** Local publication MUST fail if the destination exists, staging and
   destination are on different filesystems, or the platform cannot provide the
@@ -1014,7 +1292,8 @@ S3 and compatible object stores do not provide a multi-object atomic
 transaction. The root manifest supplies an application-level commit protocol.
 
 - **TXN-004:** An object-storage build MUST use a unique immutable prefix and
-  MUST upload data, STAC, and derived artifacts before dataset manifests.
+  MUST upload data, STAC, styles, derived artifacts, and root and dataset
+  bootstrap descriptors before dataset manifests.
 - **TXN-005:** The publisher MUST verify uploaded sizes and cryptographic
   checksums, then write dataset manifests, and MUST write the valid root manifest
   last.
@@ -1036,6 +1315,60 @@ transaction. The root manifest supplies an application-level commit protocol.
 - **TXN-010:** Existing COGs MUST NOT be trusted solely because a filename
   exists. Reuse requires matching source/build identity, expected checksum, COG
   validation, and cross-artifact agreement.
+
+### 15.4 Durable orchestration
+
+The publication protocol is independent of its orchestrator. A CLI or Make
+target may execute it initially; a durable workflow engine may later coordinate
+the same steps without changing release identity, layout, STAC, COG, or commit
+semantics.
+
+Temporal is the preferred evolution path if SKOPE needs durable retries,
+long-running execution, human approval, scheduling, or operational audit. A
+Temporal Workflow Execution is recoverable through replay of its Event History,
+and its Activities are the boundary for filesystem, GDAL, network, and object
+storage side effects. See the Temporal documentation for
+[Workflow Execution and replay](https://docs.temporal.io/workflow-execution),
+[Workflow IDs and Run IDs](https://docs.temporal.io/workflow-execution/workflowid-runid),
+and [Activities](https://docs.temporal.io/activities).
+
+- **ORCH-001:** The release format and publication protocol MUST remain
+  orchestration-provider-neutral; adopting Temporal or another engine MUST NOT
+  change the resolved release declaration, release identity, artifact bytes, or
+  authority boundaries.
+- **ORCH-002:** A durable workflow MUST receive a compact, typed release request
+  that references the immutable resolved declaration by relative or durable URI
+  and full cryptographic digest. It MUST verify that digest before performing a
+  transformation and MUST NOT place the complete declaration, source inventory,
+  generated artifacts, or raster bytes in workflow history.
+- **ORCH-003:** The application-level request ID MUST remain stable across
+  retries and workflow continuation. A provider-generated run ID or Activity
+  attempt number MUST NOT determine release identity or publication paths.
+- **ORCH-004:** Every side-effecting workflow step MUST execute as an idempotent
+  Activity or equivalent operation and MUST obey TXN-001 through TXN-010.
+  Durable orchestration MUST NOT be treated as a multi-object storage
+  transaction or as evidence that an output is valid.
+- **ORCH-005:** Workflow code MUST coordinate deterministic state transitions;
+  filesystem access, source retrieval, GDAL execution, checksumming, object
+  upload, and publication pointer updates MUST occur through Activities or an
+  equivalent explicit side-effect boundary.
+- **ORCH-006:** A root workflow SHOULD coordinate one independently retryable
+  dataset build per selected dataset. Each dataset build MUST produce and
+  validate its dataset manifest before the root workflow may write the root
+  manifest.
+- **ORCH-007:** Human approvals MAY be captured through durable workflow
+  messages. Approval identity and operational event history MUST remain
+  workflow provenance, not scientific metadata or release authority; any
+  approved change that affects scientific meaning or output bytes MUST first be
+  incorporated into a new resolved release declaration.
+- **ORCH-008:** Closed workflow history MAY be retained according to operational
+  policy rather than release-retention policy. Before workflow history expires,
+  a successful execution MUST leave a provider-neutral completion record that
+  relates request ID, declaration digest, producer, start and completion times,
+  outcome, release ID, and root-manifest reference in a deployment-selected
+  durable operational audit store outside the dataset release. The record MUST
+  NOT replace the root manifest, and a complete Temporal Event History MUST NOT
+  be copied into the dataset release.
 
 ## 16. Registry and API compatibility
 
@@ -1078,6 +1411,18 @@ transaction. The root manifest supplies an application-level commit protocol.
   alias MUST NOT appear as a thirteenth STAC variable or duplicate data asset,
   and requests through either GDD identifier MUST resolve to identical bytes,
   bands, and results.
+- **API-010:** The API compatibility projection MUST expose the selected default
+  style's exact physical rescale endpoints and legend inputs to SKOPE UI. The
+  coordinated UI release MUST consume those values without the current global
+  `COLOR_MAX_PCT` multiplier. Legacy `min` and `max` fields MAY remain during
+  transition, but MUST be generated from the selected style and MUST have the
+  same exact-endpoint semantics; they MUST NOT preserve or compensate for the
+  historical client-side multiplier.
+
+SKOPE UI is the only supported consumer of the legacy variable rendering
+fields. The API and UI changes required by API-010 are therefore one coordinated
+compatibility migration: endpoint and workflow compatibility are retained, but
+the undocumented percentage-cap behavior is intentionally not preserved.
 
 The current API depends on dataset-level CRS/transform for request-size checks,
 dataset-level temporal bounds for default extraction, and lookup entries for
@@ -1135,16 +1480,16 @@ is accepted. Together they cover every normative MUST in this proposal.
 | AT-003 | Validate SKOPE extension examples, coordinate order/ranges, variable keys, Collection style asset keys and metadata, methodology references, schema identity, and version behavior. | SKOPE-001 through SKOPE-004, SKOPE-006 through SKOPE-008 |
 | AT-004 | Build one Collection per `lbda_v2`, `paleocar_v2`, `paleocar_v3`, and `srtm`; require exactly one dataset profile and reject duplicate or changed identifiers. | ORG-001, ORG-005, ORG-009, STAC-001 through STAC-004 |
 | AT-005 | Build aligned temporal Items with every variable asset; reject missing, extra, or duplicate assets and unequal chunk boundaries. | ORG-002 through ORG-004, OBS-001, OBS-003, STAC-005 |
-| AT-006 | Validate deterministic IDs, filenames, paths, relative links, relocation, and serialization by two builds with identical explicit volatile inputs and pinned toolchains; demonstrate that changing one declared input changes the recorded build identity. | ORG-006 through ORG-008, REL-001, REL-003 through REL-005, REL-008, OBS-010 |
+| AT-006 | Validate CalVer release IDs, valid UTC dates, same-day suffix allocation, deterministic Item IDs, filenames, paths, relative links, relocation, and serialization. Rebuild one frozen declaration with identical explicit volatile inputs and pinned toolchains, then demonstrate that changing one declared input changes the declaration digest and requires a new release ID before publication. | ORG-006 through ORG-008, REL-001, REL-003 through REL-006, REL-008, BOOT-007, BOOT-010, OBS-010 |
 | AT-007 | Validate positive regular steps, exact endpoints, unique monotonic timesteps, counts, every source/output band description, ordered STAC Band names, and full `cube:dimensions.time.values`; reject missing, shuffled, duplicated, and cross-chunk repeated names. | OBS-004 through OBS-006, STAC-011, API-004, API-005 |
 | AT-008 | Reject non-finite statistics, all-nodata bands without policy, nodata collisions, invalid scale/offset, overflow, truncation, and incompatible per-variable encodings. | OBS-007 through OBS-009, COG-013, COG-014 |
 | AT-009 | Validate COG tiling, internal overviews, lossless compression, CRS/geotransform, band encoding, descriptions, and no `.ovr` or `.aux.xml`. | COG-001 through COG-003, COG-005 through COG-008, COG-010, COG-011 |
 | AT-010 | Recompute final per-band statistics from native encoded pixels and compare embedded minimum, maximum, mean, standard deviation, valid percent, and STAC Raster metadata. | COG-004, COG-008, STAC-008, VAL-006 |
 | AT-011 | Benchmark one-timestep tiles and multi-timestep extraction for block sizes and BAND/TILE/PIXEL interleave using the staged representative-data plan; record compatibility and select no default without results. | COG-012, EXP-002, EXP-003 |
 | AT-012 | Verify STAC asset media type, role, Projection fields, Raster fields, multihash checksum, byte size, and rejection of `proj:epsg` and `titiler:*` authority fields. | STAC-006 through STAC-010, OBS-011, COG-009 |
-| AT-013 | Generate continuous and categorical style fixtures; reject invalid ranges, semantics, references, URLs, WMS names, and private paths. | STYLE-001 through STYLE-003, STYLE-005 |
+| AT-013 | Generate continuous and categorical style fixtures, legends, API compatibility fields, and optional Rendering projections; reject invalid ranges, semantics, references, URLs, WMS names, private paths, independently authored projections, and lossy or disagreeing projections. | STYLE-001 through STYLE-003, STYLE-005 through STYLE-008 |
 | AT-014 | Freeze a validated plan before writing, reject writer input from any other state, construct a separate final observation after byte inspection, reject serializer access to planned facts, and reject mutation of either state. | AUTH-001, AUTH-002, OBS-012, OBS-013 |
-| AT-015 | Validate dataset/root manifest schemas, required integrity fields, forbidden geospatial fields, path rules, checksums, controlled roles, STAC entrypoint integrity, and an exhaustive inventory containing Collection, Item when applicable, COG, style, and lookup files. | MAN-001 through MAN-006, MAN-008, MAN-009, VAL-007 |
+| AT-015 | Validate dataset/root manifest schemas, required integrity fields, forbidden geospatial fields, path rules, checksums, controlled roles, STAC entrypoint integrity, and an exhaustive inventory containing bootstrap descriptors, Collection, Item when applicable, COG, style, and lookup files. | MAN-001 through MAN-006, MAN-008, MAN-009, VAL-007 |
 | AT-016 | Scan all outputs and registry inputs to prove `dataset-facts.json` is absent and unread. | MAN-007, API-001 |
 | AT-017 | Reproduce a temporal `lookup.json` byte-for-byte solely from STAC; exercise current tile and extraction resolution against first, middle, and last bands. | API-003 through API-005 |
 | AT-018 | Generate `/metadata` from STAC and compare its contract to existing API fixtures, including colormaps and geometry-size inputs. | API-002, API-006, API-007 |
@@ -1162,6 +1507,11 @@ is accepted. Together they cover every normative MUST in this proposal.
 | AT-030 | Build PaleoCAR v3 fixtures with exactly the twelve canonical variables, validate every source-folder-to-variable mapping, reject the four-variable and raw S3-spelling inventories, emit the `gdd_may_sept` compatibility alias without a duplicate STAC variable or asset, and prove both GDD identifiers return identical results. | ORG-012, API-003, API-009 |
 | AT-031 | Select paired PaleoCAR v3 estimate and uncertainty source roles entirely through curated policy and resolved source mappings; switch a fixture from the scaled pair to the unscaled pair without code or schema changes; require a new release identity and checksums, retain the earlier release unchanged, reject mixed or undocumented pairings, and require an explicit dataset-version review when semantics change. | META-009, REL-006 |
 | AT-032 | Build source-preserving `UInt32` and candidate `UInt16` COGs for representative PaleoCAR v3 estimate and uncertainty variables; scan every valid source value before conversion; reject overflow, truncation, nodata collision, or any pixel/API result difference; and report compressed size, range traffic, memory, tile and extraction latency, and build time before approving a per-variable override. | COG-013, COG-014, COG-016, EXP-004 |
+| AT-033 | Publish a proposal schema fixture through the production-like nginx static path; verify the canonical `v0.1.0` URL and `$id`, unauthenticated GET/HEAD, media type, CORS, immutable caching, disabled directory listing, repository-to-served checksum equality, availability with FastAPI stopped, survival across rollback, and rejection of a different-byte overwrite. | SKOPE-006, SKOPE-007, SKOPE-009, SKOPE-010 |
+| AT-034 | Compile reviewed person and organization fixtures from direct curated records and `science.toml`-designated identity artifacts; validate canonical ORCID/ROR URIs, preserve selected identifiers in STAC, reject conflicting names and implicit project-to-dataset role inheritance, publish only the reviewed organizational contact URL, and verify the release has no runtime dependency on project metadata or unreviewed legacy personal details. | META-010, META-011 |
+| AT-035 | For positive, nonzero-minimum, and negative-minimum variables, carry an exact reviewed physical visualization range from the style asset through `/metadata` into SKOPE UI tile parameters and legend endpoints; reject legacy-range auto-classification, percentage multipliers, hidden clipping, encoded-space reuse, and any tile/legend disagreement. Verify time-series values and summary statistics are unchanged by style selection. | META-012, STYLE-002, STYLE-009, API-002, API-010 |
+| AT-036 | Compile authoring root and four dataset `science.toml` fixtures into a frozen plan and resolved publication hierarchy; validate first-class project, release, contributor, artifact, and child-object fields, the filesystem profile, ORCID/ROR types, concise summaries, relative indexes, standalone dataset relocation, RFC 8785 declaration-graph serialization, identity profile, full SHA-256 digest and exclusions, deterministic bytes, manifest agreement, checksums and `bootstrap` roles, and publication order. Reject parallel release plans, missing or extra descriptors, parent-dependent dataset paths, exhaustive COG/Item duplication, conflicting authority facts, generated-output digest inputs, reuse of an ID for a different digest, and any descriptor claim of publication completion. | BOOT-001 through BOOT-010, MAN-003, MAN-006, MAN-009, TXN-001, TXN-004 |
+| AT-037 | Execute the same fixture through a direct runner and a durable-workflow test harness; require identical release identity and outputs, a compact digest-verified request, stable request identity across retry and continuation, side effects only through idempotent operations, dataset completion before the root marker, and a provider-neutral completion record. Reject large workflow payloads, run-ID-derived paths, hidden output-affecting request parameters, event-history copies in the release, and any orchestration reference that acts as a commit marker. | MAN-010, ORCH-001 through ORCH-008, TXN-001 through TXN-010 |
 
 ## 19. Migration plan
 
@@ -1212,9 +1562,11 @@ candidate and `paleocar_v2/maize_farming_niche` is the initial categorical
 Benchmark artifacts are disposable evidence, not releases, and SHOULD be
 removed after their measurements and toolchain identity are recorded.
 
-1. **Schemas and typed curated metadata.** Define versioned curated, source
+1. **Schemas and typed curated metadata.** Define the first version of the
+   `science.toml` core concepts required by BOOT-009, the
+   `openskope-dataset-release:v1` filesystem profile, and versioned source
    manifest, SKOPE, style, dataset-manifest, and root-manifest schemas. Create
-   reviewed fixtures for all four datasets.
+   reviewed root and dataset fixtures for all four datasets.
 2. **Typed observations and strengthened preflight.** Introduce the conceptual
    plan/final-observation lifecycle and preserve `titiler`'s temporal and
    whole-migration preflight. Add grid tolerance, full band-description,
@@ -1222,13 +1574,18 @@ removed after their measurements and toolchain identity are recorded.
 3. **Staged COG generation and byte validation.** Generate into unique staging,
    apply per-variable encodings, embed statistics and overviews, reopen bytes,
    and run benchmark experiments.
-4. **Dataset-level STAC.** Emit one Collection per dataset with aligned Items,
-   pinned extensions, SKOPE metadata, and style assets.
+4. **Dataset-level STAC.** Emit one Collection and one dataset-local
+   `science.toml` per dataset with aligned Items, pinned extensions, SKOPE
+   metadata, and style assets.
 5. **Derived lookup.** Generate `lookup.json` only from finalized STAC and prove
    compatibility with current resolvers.
 6. **Dataset manifests.** Inventory and checksum each validated dataset release.
-7. **Root manifest and publication protocol.** Implement local atomic rename and
-   object-storage commit-marker semantics with failure injection.
+7. **Root bootstrap, manifest, and publication protocol.** Emit the root
+   `science.toml`, then implement local atomic rename and object-storage
+   commit-marker semantics with failure injection. Define the provider-neutral
+   request and completion records and prove the same protocol through a direct
+   runner; Temporal integration remains optional orchestration work rather than
+   a release-format dependency.
 8. **Registry generation from STAC.** Generate environment-selected compatibility
    metadata and verify `/metadata`, tiles, extraction, and analysis.
 9. **Migration of four datasets.** Migrate and validate `lbda_v2`, `paleocar_v2`,
@@ -1299,7 +1656,78 @@ removed after their measurements and toolchain identity are recorded.
 | Alternative | Advantages | Costs and conclusion |
 | --- | --- | --- |
 | Direct STAC authoring | No compilation abstraction | Humans can accidentally curate observed fields and structural links. Rejected. |
-| Compiled typed metadata | Enforces authority boundary and supports ergonomic scientific review | Requires schemas and adapters. Recommended. |
+| Separate compiled dataset metadata | Enforces an authority boundary | Duplicates identity, contributors, stewardship, and artifact references maintained in `science.toml`. Rejected. |
+| Authoring `science.toml` hierarchy compiled to STAC and release artifacts | Provides one typed declaration graph for project, release, and dataset declarations while retaining specialized published authorities | Requires the first public `science.toml` schema to include the general-purpose fields in BOOT-009 and requires profile-aware compilation. Selected. |
+
+### 20.6 SKOPE schema hosting
+
+| Alternative | Advantages | Costs and conclusion |
+| --- | --- | --- |
+| FastAPI route | Uses the application deployment directly | Couples permanent identifiers to application health and rollback contents. Retain only as a development fallback. |
+| WordPress media or route | Uses an existing public host | CMS routing, caching, media types, and site migrations are unnecessary risks for immutable machine contracts. Rejected. |
+| nginx static path on `api.openskope.org` | Reuses owned DNS while bypassing application and CMS lifecycles; efficient immutable caching | Requires an append-only publication step owned by infrastructure. Recommended. |
+
+### 20.7 Style authority and interoperability
+
+| Alternative | Advantages | Costs and conclusion |
+| --- | --- | --- |
+| Rendering 2.0.0 as authority | Uses a recognizable STAC extension and maps closely to common tile parameters | Pilot maturity, temporal Item duplication, renderer-shaped concepts, and incomplete support for custom legends make it an unstable authority. Rejected for v1. |
+| Standalone SKOPE JSON only | Supports SKOPE maps and legends with one stable, checksummed asset per variable | Generic STAC clients cannot discover a standard rendering without a custom integration. Insufficient as the long-term interoperability story. |
+| SKOPE JSON authority with generated Rendering projection | Keeps richer presentation under a narrow versioned contract while exposing losslessly representable defaults to standards-oriented clients | Requires a one-way adapter and cross-representation validation. Selected; the Rendering projection remains optional until interoperability tests justify requiring it. |
+
+### 20.8 Attribution and contacts
+
+| Alternative | Advantages | Costs and conclusion |
+| --- | --- | --- |
+| Publish legacy contact blocks | Preserves all existing text visibly | Conflates attribution and support, exposes potentially stale personal details, and cannot be parsed reliably. Rejected. |
+| Require the STAC Contacts extension | Provides structured people, organizations, roles, addresses, email, and identifiers | Proposal maturity and permanent replication of mutable contact details add more contract than SKOPE currently needs. Deferred unless a later use case requires machine-readable contacts. |
+| Core Providers, citations, persistent identifiers, and an organizational contact URL | Uses stable STAC fields, retains reviewed ORCID and ROR identities, and lets current support details evolve outside immutable releases | Does not encode detailed contact channels in STAC. Selected for v1. Project identity artifacts designated by `science.toml` are optional authoring inputs, not automatic dataset attribution or runtime dependencies. |
+
+### 20.9 Ranges and SKOPE UI rendering
+
+| Alternative | Advantages | Costs and conclusion |
+| --- | --- | --- |
+| Treat legacy `min`/`max` as observed extrema | Requires no scientific review before generating statistics | The values have no provenance, differ from byte-derived statistics, and repeat implausibly across unlike variables. Rejected. |
+| Treat legacy `min`/`max` as scientific domains | Preserves simple variable bounds | Several values appear chosen for display or scaled products and cannot establish scientific validity. Rejected without per-variable evidence. |
+| Preserve the UI's global percentage cap | Reproduces current visual contrast | A fixed fraction of an absolute maximum is neither a percentile nor a valid range calculation, behaves incorrectly for nonzero or negative minima, and conceals presentation policy in client code. Rejected. |
+| Use exact reviewed style ranges | Makes tile rescaling and legends deterministic, supports per-variable outlier choices, and cleanly separates presentation from statistics and scientific validity | Requires coordinated API/UI migration and per-variable review. Selected. Existing `min`/`max` values remain evidence only; COG/STAC statistics are generated from bytes, scientific domains remain curated, and the selected style owns exact physical rendering endpoints. |
+
+### 20.10 Release bootstrap hierarchy
+
+| Alternative | Advantages | Costs and conclusion |
+| --- | --- | --- |
+| Root `science.toml` only | Provides one entrypoint for the complete publication | A copied dataset directory loses its general bootstrap descriptor and requires knowledge of SKOPE's layout. Rejected. |
+| Dataset `science.toml` files only | Makes each dataset independently discoverable | Provides no general entrypoint for the root Catalog, commit marker, or selected dataset set. Rejected. |
+| Root plus one descriptor per dataset | Supports aggregate and standalone discovery with concise metadata summaries and indexes | Adds five resolved, checksummed files and a filesystem-profile validator. Selected. Authoring descriptors form the release declaration; published descriptors retain bootstrap authority without replacing STAC, COG, style, or manifest authority and are not emitted below dataset level. |
+
+### 20.11 Durable orchestration
+
+| Alternative | Advantages | Costs and conclusion |
+| --- | --- | --- |
+| Build a SKOPE-specific request database and event log | Full control over request and audit representations | Reimplements durable execution, replay, retry, signaling, and operational tooling. Rejected as the target architecture. |
+| Make Temporal history part of the release format | Preserves detailed execution evidence beside the outputs | Couples an open data release to one orchestration provider, can be large, has independent retention, and confuses operational history with scientific and byte authority. Rejected. |
+| Provider-neutral request and completion records with optional Temporal execution | Supports a simple direct runner first and later durable workflows without changing release artifacts or authorities | Requires strict idempotency and an adapter between generic records and Temporal identifiers. Selected. Temporal Event History remains the operational execution record while retained; the release stores only a compact provenance reference. |
+
+Future work may evaluate the same orchestration boundary for coarse-grained,
+asynchronous geospatial processing such as source acquisition, mosaicking,
+reprojection, COG construction, validation, summary generation, and polygon
+time-series extraction. Temporal would coordinate idempotent Activities that run
+GDAL, Rasterio, or external batch jobs; raster bytes and large observations
+would remain in shared or object storage and pass through workflows only by
+checksummed reference. Interactive TiTiler map requests and per-tile or
+per-block computation are latency-sensitive serving operations and are not
+candidates for durable workflow orchestration. This evaluation is deferred
+beyond v1 and does not alter the release format or require replacing the current
+Redis-backed extraction lifecycle.
+
+### 20.12 Root release identifiers
+
+| Alternative | Advantages | Costs and conclusion |
+| --- | --- | --- |
+| Full or shortened declaration digest | Deterministic and naturally content-addressed | Less memorable, conflates the public release label with declaration integrity, and requires an encoding and prefix-length convention. Rejected as the public ID; the full digest remains required separately. |
+| UUID or ULID | Familiar generators and low collision risk; ULIDs are time-sortable | Random forms are not reproducible, deterministic UUIDs add namespace rules, and neither communicates the release date clearly. Rejected. |
+| Semantic version | Familiar release notation | Compatibility semantics do not map cleanly to curated scientific-data publications. Rejected. |
+| SKOPE-prefixed CalVer plus a separate declaration digest | Concise, readable, sortable by approval date, and easy to discuss while retaining cryptographic reproducibility independently | Requires explicit assignment and a same-day sequence rule. Selected as `skope-r-YYYY.MM.DD[-N]` under REL-005 and BOOT-010. |
 
 ## 21. Unresolved decisions
 
@@ -1313,11 +1741,6 @@ named owner accepting the result.
 | Exact temporal chunk policy | One timestep; fixed counts of 25, 100, or 250; target byte size | Temporal PaleoCAR rasters are approximately 1,900-2,000 bands on a 1,560-by-1,440 grid; tile requests read one band while extraction groups many requested bands by file | Use 100 timesteps as a provisional baseline only; choose from the staged experiment using tile latency with extraction and operational guardrails | Run EXP-002 and EXP-003 on representative PaleoCAR variables; do not reproduce every layout for every dataset | COG filenames and Item boundaries cannot be finalized |
 | PaleoCAR v3 source-product semantics | Use unscaled prediction/deviation pair; scaled pair; publish both as explicit variants | Each of twelve S3 quantity directories contains `prediction`, `prediction_scaled`, `pi_deviation`, and `pi_deviation_scaled`; current ingest selects only `prediction_scaled`; TIFF headers declare no explanatory scale, offset, unit, or statistics, and matched samples show scientifically different values | Provisionally select the paired `prediction_scaled` and `pi_deviation_scaled` products, but block production publication until science review; express the choice through META-009 so it is reversible in a new release | Dataset authors or science owners must document the scaling transformation, meaning and confidence level of `pi_deviation`, units, required pairings, and intended best estimate | Source mappings, uncertainty assets, encoding policy, and release content cannot be finalized |
 | PaleoCAR v3 `UInt16` relevance | Preserve source `UInt32`; lossless per-variable `UInt16` | `UInt16` can reduce storage, range traffic, and memory, but current source files lack complete statistics and the dataset-wide switch provides no range or nodata proof | Use source-preserving `UInt32`; permit only per-variable exceptions that pass EXP-004 | Full-domain scans and representative COG, tile, extraction, and summary benchmarks | Releases can proceed with larger `UInt32` outputs; only the optional optimization is deferred |
-| SKOPE schema canonical URI | `schemas.openskope.org`; repository-hosted URI; embedded local URI | No public schema host exists | Intended `https://schemas.openskope.org/stac/skope/v1.0.0/schema.json` | Ownership, TLS, permanence, and release process decision | Local validation works, but public extension cannot be claimed |
-| Style asset format | Rendering 2.0; standalone SKOPE JSON; both through adapter | Rendering is Pilot; current metadata has TiTiler names and comma-delimited styles | Standalone narrow JSON plus future Rendering adapter | UI/TiTiler interoperability prototype | Style serialization remains provisional |
-| Contacts representation | Provider description/URL; Contacts extension; linked document | Current contacts are unstructured; STAC Provider has no core email field | Provider URL plus preserved description initially | Privacy and maintainer review; extension maturity review | Contact migration requires manual fixture approval |
-| Meaning of existing `min`/`max` | Observed range; scientific domain; visualization range | Values look inconsistent across datasets and lack provenance | Treat as ambiguous and do not migrate automatically | Dataset-owner review and comparison with actual pixels/current UI | Compatibility range selection cannot be finalized |
-| Root release identifier | Timestamp slug; semantic version; content-derived ID; operator label | Current runbook leaves naming to infrastructure | UTC date plus reviewed label and collision suffix | Operations and retention-policy input | Layout examples remain illustrative |
 | Local release pointer | Explicit configured path; atomic symlink; manifest-based pointer file | Current Compose accepts a path and documents a possible symlink | Explicit immutable path for staging trials | Infrastructure review of atomic switching and Docker bind semantics | Promotion automation remains outside the format |
 | Object-storage cleanup | Immediate delete; retention window; lifecycle rule | Failed prefixes are invisible without a valid root manifest | Lifecycle rule after a retention window | Cost, audit, and incident-response input | Stale bytes consume storage but cannot become visible |
 | API compatibility duration | One release; fixed calendar period; versioned endpoint transition | Existing UI consumes `/metadata`; no deprecation agreement exists | Maintain until a versioned client migration is measured | UI inventory, telemetry, and stakeholder commitment | Legacy projection remains required |
@@ -1340,8 +1763,8 @@ scientifically equivalent.
 
 Engineering owns temporal chunk and interleave benchmarks, COG block and
 compression choices, SRTM single-COG operational validation, deterministic
-toolchains, and STAC-GeoParquet experiments. Operations owns release identifiers, local
-pointers, and object-storage cleanup. Product owns compatibility duration and
+toolchains, and STAC-GeoParquet experiments. Operations owns release identifiers,
+local pointers, object-storage cleanup, and static schema publication. Product owns compatibility duration and
 legacy static-key behavior. Grid equivalence, per-variable encoding, SRTM
 temporal meaning, and any user-visible identifier change require joint review
 with science rather than a unilateral engineering choice.
@@ -1359,15 +1782,17 @@ material, not an implementation commitment.
 | ORG-005 to ORG-008 | Curated identity and release format | Identifier/path library | Pattern, traversal, determinism, relocation tests | 1, 4 |
 | ORG-009 to ORG-012 | Dataset profile and variable declarations | Curated schema and STAC builder | Profile exclusivity, SRTM constraints, and exact PaleoCAR v3 inventory fixtures | 0, 1, 4 |
 | REL-001 to REL-008 | Release format | Release assembler | Layout, link, controlled-input determinism, immutability, mirror checks | 4-7 |
-| META-001 to META-009 | Curated metadata | Curated compiler and source-manifest parser | Schema, source mapping, selectable product-role pairs, and full legacy field migration fixtures | 1, 2, 8 |
+| BOOT-001 to BOOT-010 | Root and dataset release declarations and bootstrap descriptors | `science.toml` compiler, filesystem-profile validator, and release assembler | Core schema, CalVer identity, declaration graph, canonical digest, hierarchy, relocation, authority-agreement, determinism, manifest, and publication-order tests | 1, 4, 6, 7 |
+| META-001 to META-012 | Curated metadata | Curated compiler, identity importer, and source-manifest parser | Schema, source mapping, persistent-identifier, contact-boundary, range-classification, selectable product-role pairs, and full legacy field migration fixtures | 1, 2, 8 |
 | STAC-001 to STAC-012 | STAC authority | STAC adapters and builder | Pinned schemas, band-time sequence, static profile, links, byte comparison | 4 |
-| SKOPE-001 to SKOPE-008 | SKOPE extension | SKOPE adapter | Local schema and referential-integrity tests | 1, 4 |
-| STYLE-001 to STYLE-006 | Style assets | Style compiler and compatibility adapter | Schema, range, portability, and API projection tests | 1, 4, 8 |
+| SKOPE-001 to SKOPE-010 | SKOPE extension | SKOPE adapter and static publisher | Local schema, referential-integrity, immutable-hosting, and rollback tests | 1, 4 |
+| STYLE-001 to STYLE-009 | Style assets | Style compiler, legend serializer, Rendering adapter, and compatibility adapter | Schema, exact-range, portability, legend, Rendering agreement, and API projection tests | 1, 4, 8 |
 | OBS-001 to OBS-013 | Typed observation | Preflight, build plan, and final observation | Source headers, temporal/grid invariants, state and freeze tests | 2, 3 |
 | COG-001 to COG-016 | Byte-level COG authority | COG writer and byte inspector | OGC validator, GDAL inspection, value-space statistics, benchmarks | 3 |
-| MAN-001 to MAN-009 | Integrity manifests | Dataset/root manifest writers | JSON Schema, inventory, checksum, entrypoint, forbidden-field tests | 6, 7 |
+| MAN-001 to MAN-010 | Integrity manifests | Dataset/root manifest writers | JSON Schema, inventory, checksum, entrypoint, forbidden-field, and orchestration-reference tests | 6, 7 |
 | TXN-001 to TXN-010 | Root manifest and immutable storage | Local/object publisher | Failure injection, retry, visibility, cleanup tests | 7 |
-| API-001 to API-009 | STAC plus environment policy | Registry and lookup generators | Golden `/metadata`, temporal/static resolver, aliases, and reproducibility tests | 5, 8 |
+| ORCH-001 to ORCH-008 | Release declaration plus operational workflow history | Direct runner or durable workflow adapter | Cross-runner equivalence, replay/retry, payload-boundary, idempotency, completion-record, and provenance-reference tests | 7 |
+| API-001 to API-010 | STAC plus environment policy | Registry and lookup generators plus coordinated SKOPE UI adapter | Golden `/metadata`, exact tile/legend ranges, temporal/static resolver, aliases, and reproducibility tests | 5, 8 |
 | VAL-001 to VAL-008 | All authorities | Validation orchestrator | Pass isolation, structured findings, end-to-end conformance | 1-8 |
 | EXP-001 to EXP-004 | Experimental isolation and benchmark selection | Phase 0 harness | Path and mutation guards plus AT-011, AT-028, and AT-032 performance matrices | 0 |
 | MIG-001 to MIG-006 | Approved migration plan | Migration orchestration | Phase gates, SRTM source reconstruction, and four-dataset compatibility suite | 1-10 |
