@@ -1,8 +1,8 @@
 # SKOPE Dataset Release Specification v1
 
 - Status: Proposed
-- Version: 0.3
-- Date: 2026-09-13
+- Version: 0.4
+- Date: 2026-10-01
 - Review readiness: Ready for science review; not ready for production
   implementation.
 
@@ -30,10 +30,10 @@ covers:
 - STAC Collections, Items, and assets;
 - custom SKOPE metadata carried under the STAC `skope:` prefix;
 - the derived time-to-band rule;
-- one root release manifest;
+- one release manifest per release;
 - transactional local and object-storage publication;
-- the release-to-application data flow, including generation of the app registry
-  and the SKOPE API/UI metadata protocol;
+- the release-to-application data flow, including generation of the release
+  overview and the SKOPE API/UI metadata protocol;
 - validation and failure reporting; and
 - migration from the current metadata and package layout.
 
@@ -64,8 +64,8 @@ their variables do not currently demonstrate aligned temporal coverage.
 - Compatibility with TiTiler and one deliberately versioned SKOPE API/UI
   metadata protocol.
 - Embedded COG statistics that do not depend on auxiliary sidecars.
-- Deterministic generated STAC, one root manifest, and one generated app
-  registry.
+- Deterministic generated STAC, one release manifest, and one generated
+  overview per release.
 - Equivalent publication semantics for local filesystems and object storage.
 - Actionable validation failures that identify dataset, variable, chunk, asset,
   source, requirement identifier, and failing value when available.
@@ -83,8 +83,8 @@ their variables do not currently demonstrate aligned temporal coverage.
 ## 3. Terminology
 
 **Curated metadata**
-: Human-maintained descriptions, citations, providers, units, scientific
-  context, and presentation preferences. It excludes facts measured from raster
+: Human-maintained descriptions, citations, providers, units, and scientific
+  context. It excludes presentation choices and facts measured from raster
   bytes.
 
 **Observed metadata**
@@ -103,8 +103,8 @@ their variables do not currently demonstrate aligned temporal coverage.
 
 **Final observation**
 : An immutable, post-generation state produced by reopening and inspecting all
-  generated COG bytes. It is the only observation state consumed by STAC,
-  lookup, registry, API, and manifest generation.
+  generated COG bytes. It is the only observation state consumed by STAC
+  and manifest generation.
 
 **Temporal cube dataset**
 : A dataset whose variables share a reviewed temporal axis and aligned chunk
@@ -115,26 +115,40 @@ their variables do not currently demonstrate aligned temporal coverage.
   standalone Collection asset and does not acquire a synthetic scientific
   timestamp merely to satisfy legacy API behavior.
 
-**Dataset release**
-: The immutable package for one logical dataset version within a root release.
+**Release**
+: The immutable package for one logical dataset version. It is the unit of
+  building, validation, and publication: one dataset, one release, one manifest.
+  Its root STAC object is that dataset's Collection.
 
-**Root release**
-: An immutable package that contains a root STAC Catalog and one or more dataset
-  releases selected as a unit.
+**Release set**
+: The releases one deployment serves, pinned by release identifier and
+  declaration digest in the application repository. It is a deployment decision
+  recorded in version control, not a published artifact, and it has no identity
+  or digest of its own.
+
+**Published catalog**
+: A mutable STAC Catalog, hosted outside any release, linking to the Collection
+  of every publicly listed release. It is a discovery index for external
+  clients. It is not a release artifact and not an input to the application.
 
 **Release declaration graph**
-: The dataset authoring `curated.yml` documents, the resolved source manifests,
-  and the checksummed canonical inputs they reference, together with the set of
-  datasets selected for the release. It is the authoritative declarative input
-  compiled into a `ValidatedBuildPlan`.
+: A dataset's authoring `curated.yml`, its resolved source manifest, and the
+  checksummed canonical inputs they reference. It is the authoritative
+  declarative input compiled into a `ValidatedBuildPlan`.
+
+**Release overview**
+: One generated document per release that compacts everything a consumer needs
+  without walking the STAC tree: the variable inventory, grid, spatial extent,
+  temporal bounds and resolution, units, curated descriptive fields, and the
+  time-to-band rule. It is generated deterministically from that release's
+  validated STAC, never hand-edited, and serves both a human reader and the
+  application. It is a derived artifact, not a published metadata authority, and
+  it carries no presentation choices.
 
 **App registry**
-: One generated document that compacts everything the SKOPE application needs
-  from a release: the dataset and variable allowlist, grid, spatial extent,
-  temporal bounds and resolution, units, curated descriptive fields, and the
-  time-to-band rule. It is generated deterministically from validated STAC,
-  never hand-edited, and is the application's runtime source of truth. It is not
-  a published metadata authority and carries no presentation choices.
+: What one deployment serves at runtime: the release overviews of its pinned
+  release set, composed without modification. Composition selects and
+  concatenates; it never edits, merges, or reinterprets an overview.
 
 **Release request**
 : An operational command to validate, build, or publish a resolved release
@@ -148,17 +162,17 @@ their variables do not currently demonstrate aligned temporal coverage.
   identity.
 
 **Publication commit marker**
-: A valid root `release-manifest.json` written last. Its presence and validity
-  indicate that a root release is complete and eligible for selection.
+: A valid `release-manifest.json` written last. Its presence and validity
+  indicate that one release is complete and eligible for selection.
 
 **Derived artifact**
-: A reproducible output generated from an authority, such as the app registry
-  or the time-to-band rule it carries. A derived artifact is not an independent
-  source of truth.
+: A reproducible output generated from an authority, such as the release
+  overview or the time-to-band rule it carries. A derived artifact is not an
+  independent source of truth.
 
-**Scientific domain**
-: The documented set of values meaningful for a variable according to the
-  science, regardless of whether every value occurs in a particular release.
+**Valid range**
+: The documented range of values that are scientifically meaningful for a
+  variable, regardless of whether every value occurs in a particular release.
 
 **Observed range**
 : The finite minimum and maximum actually observed in valid pixels of a defined
@@ -166,7 +180,7 @@ their variables do not currently demonstrate aligned temporal coverage.
 
 **Visualization range**
 : A curated or derived range selected for rendering. It need not equal the
-  scientific domain or observed range.
+  valid range or observed range.
 
 **Native encoded value space**
 : The stored pixel values before scale and offset are applied. Embedded COG
@@ -188,20 +202,22 @@ their variables do not currently demonstrate aligned temporal coverage.
 
 | Information | Authority |
 | --- | --- |
-| Release identity and selected dataset composition | Root release manifest |
+| Release identity | Release manifest |
 | Dataset descriptions and citations | Curated input, published through STAC Collection |
 | Variable descriptions and units | Curated input, published through STAC |
 | CRS, transform, shape and spatial extent | Generated COG and corresponding STAC projection fields |
 | Temporal coverage | `FinalObservation` during build; STAC after publication |
 | Nodata, datatype, scale and offset | COG headers and corresponding STAC asset metadata |
 | Per-band statistics | Embedded COG metadata and corresponding STAC asset metadata |
-| Checksums and byte sizes | STAC File Info plus the root release manifest |
-| Source provenance | Root release manifest and STAC provenance links |
-| Publication completion | Root release manifest |
-| Time-to-band mapping | Derived rule, generated from STAC into the app registry |
-| Application metadata | App registry, generated from validated STAC |
+| Checksums and byte sizes | STAC File Info plus the release manifest |
+| Source provenance | Release manifest and STAC provenance links |
+| Publication completion | Release manifest |
+| Time-to-band mapping | Derived rule, generated from STAC into the release overview |
+| Application metadata | Release overview, generated from validated STAC |
 | SKOPE-specific dataset metadata | Versioned SKOPE extension on the STAC Collection |
 | Presentation choices | Application repository display document; never a release artifact |
+| Which releases a deployment serves | Application repository release-set pin |
+| Which releases are publicly listed | Published catalog, outside any release |
 
 - **AUTH-001:** Generated copies MUST agree with their authority and MUST NOT be
   treated as independent sources.
@@ -225,98 +241,56 @@ the integrity and completion authority.
   `TemporalCubeDataset` or `StaticRasterDataset`. Profile-specific requirements
   MUST NOT be applied to the other profile.
 
-`lbda_v2`, `paleocar_v2`, and `paleocar_v3` are expected to use
-`TemporalCubeDataset`, subject to science review of their temporal semantics.
-SRTM MUST use `StaticRasterDataset` with the single-COG layout defined below.
+Section 19.1 records the profile chosen for each initial dataset.
 
 ### 5.2 Collection and Item model
 
 - **ORG-001:** A logical dataset version MUST be represented by exactly one STAC
-  Collection. Initial Collection identifiers MUST remain `lbda_v2`,
-  `paleocar_v2`, `paleocar_v3`, and `srtm` unless a reviewed migration decision
-  changes an identifier.
-- **ORG-002:** A temporal dataset SHOULD use one Item per aligned temporal chunk,
+  Collection.
+- **ORG-002:** A temporal dataset MUST use one Item per aligned temporal chunk,
   with one COG asset per variable in that Item and identical chunk boundaries
   across all required variables.
 - **ORG-003:** Each temporal Item MUST declare either `datetime` for one instant
   or `start_datetime` and `end_datetime` for an interval, following the
   [STAC Item temporal rules](https://github.com/radiantearth/stac-spec/blob/master/item-spec/item-spec.md#datetime-object).
-- **ORG-004:** Every variable required by a dataset release MUST occur exactly
-  once as an asset in every applicable temporal Item. Missing data MUST be
-  modeled explicitly by a reviewed dataset policy, not by an absent asset.
+- **ORG-004:** Every variable required by a release MUST occur exactly once as an
+  asset in every applicable temporal Item. Missing data MUST be modeled
+  explicitly by a reviewed dataset policy, not by an absent asset.
+- **ORG-013:** A dataset MUST be represented by a Collection rather than a
+  Catalog, and its Collection MUST be the root STAC object of its release. A
+  Catalog carries only `type`, `stac_version`, `id`, `description`, `links`, and
+  optionally `stac_extensions` and `title`; `license`, `providers`, `extent`,
+  `keywords`, `summaries`, `assets`, and `item_assets` exist only on a
+  Collection. Representing a dataset as a Catalog would therefore strand the
+  license required by STAC-001, the extents required by STAC-004, the
+  `item_assets` required by STAC-003, and every `sci:` and `skope:` field, or
+  force them to be duplicated onto each child. Because "any JSON object that
+  contains all the required fields is a valid STAC Collection and also a valid
+  STAC Catalog", a Collection is a Catalog plus those seven fields and a Catalog
+  offers nothing a Collection lacks. See the
+  [STAC Catalog fields](https://github.com/radiantearth/stac-spec/blob/master/catalog-spec/catalog-spec.md#catalog-fields)
+  and
+  [STAC Collection fields](https://github.com/radiantearth/stac-spec/blob/master/collection-spec/collection-spec.md#collection-fields).
 
 This reverses the current one-Collection-per-variable layout. Aligned Items make
-cross-variable completeness and temporal chunk boundaries directly testable.
+cross-variable completeness and temporal chunk boundaries directly testable, and
+they keep one dataset's shared temporal axis in one `cube:dimensions.time`
+rather than spread across sibling Collections that nothing checks against each
+other. Child links are recommended but not required for a Collection, so a
+Collection is also the correct root for the static profile, which has no Items.
 The exact chunk size remains unresolved in Section 21.
 
-### 5.3 SRTM profile
-
-SRTM is a static elevation dataset in the proposed scientific model, although
-the legacy API exposes one lookup timestep.
-
-- **ORG-010:** The v1 SRTM release MUST contain one optimized COG as a Collection
-  asset and MUST NOT contain spatial Items. Phase 0 MUST confirm that the COG can
-  be generated, validated, transferred, tiled, and window-read within documented
-  operational limits before SRTM migration begins. Failure to meet those limits
-  MUST block SRTM migration and trigger review of a future spatial-tiling profile;
-  it MUST NOT cause an unreviewed layout change within v1.
-
-This is the simplest model compatible with the current single-source API path.
-Spatial tiling remains a future fallback because it would require mosaic or
-spatial routing behavior in addition to a different STAC layout.
-
-- **ORG-011:** The SRTM Collection temporal extent MUST represent the reviewed
-  primary radar-acquisition interval during the February 11-22, 2000 mission,
-  as documented by
-  [NASA Earthdata](https://www.earthdata.nasa.gov/centers/lp-daac). Exact RFC
-  3339 bounds MUST be taken from authoritative source metadata rather than
-  constructed from an unexplained legacy year. The Collection MUST record
-  CGIAR-CSI Version 4.1 publication and void-filling as version, citation,
-  processing, and provenance facts rather than observation time. Provenance
-  MUST disclose the CGIAR product's documented use of interpolation and
-  ancillary elevation sources for filled pixels, as described by the
-  [CGIAR product documentation](https://bigdata.cgiar.org/srtm-90m-digital-elevation-database/).
-  The static COG band name MUST be `srtm_elevation`.
-
-### 5.4 PaleoCAR v3 variable inventory
-
-The September 2026 review of the
-[public SKOPE source-object listing](https://skope.s3.us-west-2.amazonaws.com/?list-type=2)
-found twelve PaleoCAR v3 quantity directories. The inventory decision treats
-directory names as source mappings, not automatically as public identifiers.
-
-- **ORG-012:** The proposed v1 `paleocar_v3` Collection MUST contain exactly the
-  following twelve canonical variables:
-
-  - `gdd_cotton_annual`
-  - `gdd_cotton_may_sept`
-  - `gdd_cotton_water_year`
-  - `gdd_maize_annual`
-  - `gdd_maize_may_sept`
-  - `gdd_maize_water_year`
-  - `gdd_wheat_annual`
-  - `gdd_wheat_may_sept`
-  - `gdd_wheat_water_year`
-  - `ppt_annual`
-  - `ppt_may_sept`
-  - `ppt_water_year`
-
-The source manifest maps S3 spellings such as `maysept` and `wateryear` to the
-canonical `may_sept` and `water_year` forms. Selecting this inventory does not
-select among each directory's `prediction`, `prediction_scaled`,
-`pi_deviation`, and `pi_deviation_scaled` products. Their scientific semantics
-and pairing remain unresolved in Section 21.
-
-### 5.5 Identifiers, paths, and names
+### 5.3 Identifiers, paths, and names
 
 - **ORG-005:** Dataset and variable identifiers MUST match
   `^[a-z][a-z0-9_]*$`, MUST be stable within a dataset version, and MUST NOT be
   derived from a transient source filename.
 - **ORG-006:** Item identifiers MUST be deterministic from dataset identity and
-  chunk bounds. The default form is `<dataset-id>--<start-key>--<end-key>`; a
+  chunk bounds and MUST have the form `<dataset-id>--<start-key>--<end-key>`; a
   single-timestep Item repeats the same key.
 - **ORG-007:** Asset keys MUST equal variable identifiers. COG filenames MUST be
-  `<item-id>.tif` beneath `cogs/<variable-id>/`.
+  `<item-id>.tif` beneath `cogs/<variable-id>/`. A `StaticRasterDataset` COG has
+  no Item, so its path MUST be `cogs/<variable-id>.tif`.
 - **ORG-008:** Release-relative paths MUST use `/`, MUST be normalized, MUST NOT
   contain `..`, and MUST NOT contain an absolute deployment-host path.
 
@@ -326,179 +300,137 @@ full timestamp is required.
 
 ## 6. Release layout
 
+A release packages exactly one dataset. Its root STAC object is that dataset's
+Collection (ORG-013), so the release needs no Catalog above it.
+
 ```text
 <release-id>/
-  catalog.json
   release-manifest.json
-  registry.yml            # optional; see Section 16
-  <dataset-id>/
-    stac/
-      collection.json
-      items/
-        <item-id>.json
-    cogs/
-      <variable-id>/
-        <item-id>.tif
+  collection.json
+  overview.yml
+  items/
+    <item-id>.json
+  cogs/
+    <variable-id>/
+      <item-id>.tif        # TemporalCubeDataset
+    <variable-id>.tif      # StaticRasterDataset
 ```
 
-A release carries one manifest, at the root. Releases are built and published as
-one package containing every dataset SKOPE exposes at that time, so per-dataset
-manifests and per-dataset bootstrap descriptors are not emitted. Styles are not
-release artifacts. `lookup.json` is not emitted: the time-to-band mapping is
-generated as a rule (Section 16).
+`items/` is omitted for a `StaticRasterDataset`, whose COGs are Collection
+assets at `cogs/<variable-id>.tif` (ORG-007, STAC-012). The time-to-band mapping
+is generated as a rule into `overview.yml` (Section 16) rather than serialized
+as an index file.
 
-- **REL-001:** Root and dataset STAC links and asset `href` values MUST be
-  relative within the release. The release MUST remain valid after relocation
-  without rewriting links.
-- **REL-002:** `catalog.json`, each `stac/collection.json`, all Item JSON, and
-  COGs are normative published artifacts. The app registry is a derived
-  artifact. Descriptive facts compiled from authoring `curated.yml` into
-  published STAC remain governed by the lifecycle authority rules in Section 4.
+- **REL-009:** This layout is closed. Every file in a release other than the
+  manifest itself (MAN-006) MUST be one of the objects listed above, MUST appear
+  in the manifest inventory required by MAN-003, and MUST carry a role from the
+  controlled vocabulary in MAN-009. Validation MUST reject any file that does
+  not.
+
+- **REL-001:** Links and asset `href` values that target objects inside the
+  release MUST be relative, and STAC objects MUST NOT carry a `self` link, so a
+  release remains valid after relocation without rewriting links. Links to
+  external resources, such as provenance, license, DOI, ORCID, documentation,
+  and contact pages, MUST be absolute HTTPS URLs.
+- **REL-002:** `collection.json`, all Item JSON, and COGs are normative
+  published artifacts. `overview.yml` is a derived artifact. Descriptive facts
+  compiled from authoring `curated.yml` into published STAC remain governed by
+  the lifecycle authority rules in Section 4.
 - **REL-003:** A release MUST contain exactly one manifest, and it MUST be the
-  publication commit marker at `<release-id>/release-manifest.json`. Per-dataset
-  manifests MUST NOT be emitted.
+  publication commit marker at `<release-id>/release-manifest.json`.
 - **REL-004:** Serialization MUST be deterministic: UTF-8, LF line endings,
   stable key and array ordering where order is not semantically defined, no
-  non-finite JSON values, and one trailing newline for text files.
-- **REL-005:** A root release identifier MUST use CalVer in the form
-  `skope-r-YYYY.MM.DD` for the first approved declaration on a UTC date and
-  `skope-r-YYYY.MM.DD-N`, where `N` starts at `2`, for any later declaration on
-  that date. The date MUST be a valid Gregorian date, MUST equal the UTC date of
-  the explicitly supplied `release.created` value, and MUST represent approval
-  and freezing of the declaration rather than the start time of a build retry.
-  The identifier MUST be assigned explicitly and MUST NOT be synthesized from
-  an implicit wall clock.
+  non-finite JSON values, and one trailing newline for text files. YAML files
+  MUST be emitted as YAML 1.2 with a pinned emitter configuration: every string
+  scalar quoted, fixed indentation and line width, block style except where a
+  requirement specifies flow style, and the shortest round-trip representation
+  for floating-point numbers.
+- **REL-005:** A release identifier MUST use the form
+  `<dataset-id>-r-YYYY.MM.DD` for the first approved declaration for that
+  dataset on a UTC date and `<dataset-id>-r-YYYY.MM.DD-N`, where `N` starts at
+  `2`, for any later declaration for that dataset on that date. The date MUST be
+  a valid Gregorian date, MUST equal the UTC date of the explicitly supplied
+  `release.created` value (META-004), and MUST represent approval and freezing
+  of the declaration rather than the start time of a build retry. The identifier
+  MUST be assigned explicitly and MUST NOT be synthesized from an implicit wall
+  clock. The dataset identifier is part of the release identifier so that a
+  release identifier is unique on its own and never has to be qualified by
+  context; the same-day sequence is therefore scoped per dataset.
+- **REL-010:** A release identifier MUST NOT be used as a dataset version. A
+  dataset's `version` is the reviewed version of the source science and MAY be
+  unchanged across successive releases, because repackaging decisions such as a
+  different chunk size produce a new release of the same dataset version.
+  A release's Versioning-extension content is limited to the `version` field
+  and an optional absolute `predecessor-version` link to the Collection of the
+  previous dataset version's release. Succession and deprecation change after
+  publication, so they are recorded outside releases.
 - **REL-006:** A released path MUST be immutable; changed bytes require a new
   release identifier.
-- **REL-007:** A v1 release MUST NOT publish an `items.parquet` STAC-GeoParquet
-  mirror. Item JSON remains the only published Item representation. Adding a
-  mirror later requires a reviewed specification update, exact agreement
-  validation against Item JSON, and a new CalVer release. This deliberate v1
-  omission favors the current small Item counts and controlled API/UI access
-  over Portolan's recommendation to publish an item mirror for every raster
-  Collection modeled with Items; SKOPE does not claim Portolan conformance. See
-  the [Portolan item-mirror guidance](https://github.com/portolan-sdi/portolan-spec/blob/main/specs/portolan/formats.md#raster).
-- **REL-008:** Byte-for-byte reproducibility MUST be evaluated with identical
-  dataset authoring `curated.yml` documents, source bytes, source manifests,
-  build policy, release identifier, supplied creation timestamp, producer
-  revision, and pinned GDAL, compression, operating-system, and serialization
-  toolchain. Volatile values MUST be explicit build inputs; a build MUST NOT
-  read the wall clock implicitly.
+- **REL-008:** Byte-for-byte reproducibility MUST be evaluated with an identical
+  authoring `curated.yml`, source bytes, resolved source manifest and its
+  `release` block (META-004), release identifier, supplied creation timestamp,
+  producer revision, and pinned GDAL, compression, operating-system, and
+  serialization toolchain. Volatile values MUST be explicit build inputs; a
+  build MUST NOT read the wall clock implicitly. The optional orchestration
+  reference in the manifest (MAN-010) is excluded from byte comparison.
 
-The root Catalog links to each selected dataset Collection. A dataset Collection
-links to its Items and MAY expose documentation or other collection-wide
-metadata as Collection assets when permitted by STAC.
-For the SRTM `StaticRasterDataset`, `stac/items/` is omitted and the COG is a
-Collection asset.
+The Collection links to its Items. Documentation is linked by absolute HTTPS URL
+rather than packaged in the release.
 
 ### 6.1 Release identity
 
-A release needs two identifiers and no bootstrap descriptor. Both live in the
-root release manifest (Section 14), which is already the publication commit
-marker and already carries the selected dataset composition.
+A release has two identifiers, both recorded in its manifest (Section 14), which
+is already the publication commit marker.
 
-Published bootstrap descriptors are withdrawn from this proposal. An earlier
-draft emitted a root and per-dataset `science.toml`, resolved from authoring
-documents of the same name. Three findings retired that design:
+The **release ID** is assigned by a person: a readable, sortable label such as
+`paleocar_v3-r-2026.09.12` (REL-005). The **declaration digest** is computed: the
+content identity of that dataset's resolved declaration graph (MAN-011). They are
+deliberately distinct and MUST NOT be conflated, and MAN-012 binds them precisely
+because one is chosen and the other is derived — a label can be allocated, an
+identity cannot.
 
-- No `science.toml` specification, schema, or project of that name exists
-  publicly, and this proposal explicitly did not create one. The name therefore
-  bought no interoperability, only an obligation to define a schema.
-- The published descriptor was barred from being a runtime dependency and from
-  duplicating variable definitions, encoding, coverage, statistics, checksums,
-  or completion state. What remained was identity and pointers, both of which
-  `catalog.json`, the Collection, and the root manifest already provide.
-- A document that must agree with STAC, may not be relied on, and restates
-  information held elsewhere is a synchronization risk rather than an asset.
+Curated content that has no home in STAC core or a pinned extension is carried on
+the Collection under the `skope:` prefix (Section 10), so there is one published
+place to look. Authoring input is the dataset's `curated.yml` (Section 7).
 
-Curated content that has no home in STAC core or a pinned extension is carried
-on the Collection under the `skope:` prefix (Section 10), so there is one
-published place to look. Authoring input is `<dataset-id>/curated.yml`
-(Section 7).
+### 6.2 Releases, release sets, and the published catalog
 
-The withdrawn descriptor shape, retained here only to explain what moved:
+Building a release, listing it publicly, and serving it from a deployment are
+three separate acts with different actors, cadences, and reversals. Section 20.10
+records why they are not combined into a single aggregate artifact.
 
-```toml
-schema = 1
-status = "stable"
+| Act | Produces | Reversed by |
+| --- | --- | --- |
+| Build | Immutable bytes at one release path | Not publishing the release |
+| List | An entry in the published catalog | A commit removing the entry |
+| Deploy | An updated release-set pin and application image | A rollback commit |
 
-[project]
-id = "paleocar_v3"
-name = "PaleoCAR: SW USA Paleoclimate Reconstruction"
-description = "A reviewed human discovery summary."
-version = "3"
-kind = "data-project"
-filesystem = "openskope-dataset-release:v1"
+- **REL-011:** A release MUST contain exactly one dataset. Serving several
+  datasets together is a release set (REL-012); listing several datasets together
+  is the published catalog (REL-013).
+- **REL-012:** A deployment MUST record its release set in the application
+  repository as an explicit pin, per dataset, of the release ID, the declaration
+  digest, and the SHA-256 digest of the `release-manifest.json` file. The
+  manifest digest identifies the published bytes, because the manifest records
+  the checksum of every other file; the declaration digest identifies only the
+  inputs. The pin is version-controlled deployment state, MUST NOT be assigned
+  an identifier or digest of its own, and MUST NOT be published as a release
+  artifact.
+- **REL-013:** Public listing MUST be a published STAC Catalog hosted outside any
+  release, generated from a version-controlled record of the releases chosen for
+  public listing. It MUST link to each listed release's Collection and MUST
+  record each listed release's ID and declaration digest, so that a mutable index
+  still resolves only to immutable, verifiable content. A release build MUST NOT
+  write to it: a build writes only within its own staging and release paths
+  (TXN-001), and listing is a separate reviewed act.
+- **REL-014:** The published catalog MUST NOT be an input to the SKOPE
+  application. The application reads its release set (Section 16); it does not
+  discover datasets at runtime.
 
-[release]
-id = "skope-r-2026.09.12"
-created = "2026-09-12T15:45:30Z"
-identity_profile = "openskope-release-declaration-v1"
-digest_algorithm = "sha256"
-declaration_digest = "a8c92e7d4b131029ea9fd04cd7d8ba3131d058cdaf5127add24dc68c175dc13f"
-
-[stewardship]
-level = "managed"
-
-[[contributors]]
-kind = "person"
-name = "Example Contributor"
-roles = ["creator"]
-orcid = "https://orcid.org/0000-0002-1825-0097"
-
-[artifacts.stac]
-href = "stac/collection.json"
-media_type = "application/json"
-roles = ["metadata", "catalog"]
-status = "present"
-canonical = true
-
-[artifacts.release_manifest]
-href = "release-manifest.json"
-media_type = "application/json"
-roles = ["integrity"]
-status = "present"
-canonical = true
-```
-
-A root instance added keyed child research objects pointing at each dataset's
-descriptor. Both of these are withdrawn: release identity lives in the root
-manifest, and the selected dataset composition is recorded there as well.
-
-- **BOOT-001 through BOOT-006: withdrawn.** These required a root and
-  per-dataset published `science.toml`, defined their contents, and constrained
-  their authority. No published bootstrap descriptor is emitted. Release
-  identity moves to the root manifest (BOOT-007, BOOT-010); curated content
-  moves to the Collection and the `skope:` prefix; artifact indexes are STAC
-  links and the root manifest inventory.
-- **BOOT-007:** Independently of its CalVer release ID, a root release MUST
-  record the full lowercase hexadecimal SHA-256 digest of an RFC 8785 canonical
-  JSON projection of the fully resolved release declaration graph and all
-  referenced build-input checksums. The projection MUST identify itself with
-  `identity_profile = openskope-release-declaration-v1`, apply validated schema
-  defaults, preserve semantically ordered arrays, and normalize unordered
-  collections before serialization. It MUST include the explicit
-  `release.created` value and MUST exclude the release ID, the declaration
-  digest itself, generated output references, generated bytes, staging or host
-  paths, request and workflow metadata, and publication-completion state. See
-  the [JSON Canonicalization Scheme](https://www.rfc-editor.org/rfc/rfc8785.html).
-- **BOOT-008 and BOOT-009: withdrawn** with the published descriptor. Human
-  discovery starts at `catalog.json` and the Collection; lifecycle, stewardship,
-  contributors, and persistent identifiers are published through STAC
-  `providers`, the Scientific Citation extension, and the `skope:` prefix.
-- **BOOT-010:** A retry or reproducibility rebuild of one frozen declaration
-  MUST retain its release ID, creation timestamp, identity profile, and full
-  declaration digest. A published release ID MUST NOT be associated with a
-  different declaration digest; a changed declaration MUST receive a new
-  CalVer identifier before publication even when its intended output bytes are
-  unchanged.
-
-The release ID and the declaration digest are deliberately distinct and MUST NOT
-be conflated. The **release ID** is assigned by a person: a readable, sortable
-CalVer label such as `skope-r-2026.09.12`. The **declaration digest** is
-computed: the content identity of the resolved declaration graph. BOOT-010 binds
-them precisely because one is chosen and the other is derived — a label can be
-allocated, an identity cannot.
+Generating the catalog from a version-controlled record rather than from a
+listing of release storage keeps publication a reviewed decision, keeps its
+history in version control, and prevents an unlisted development release from
+becoming public as a side effect of where its bytes were written.
 
 ## 7. Curated authoring metadata
 
@@ -507,47 +439,56 @@ allocated, an identity cannot.
 - **META-001:** There MUST be one curated authoring document per dataset
   identity, named `<dataset-id>/curated.yml`. Its schema validation MUST enforce
   the curated content boundary in this section.
-- **META-002:** Curated files MAY contain titles, descriptions, variable names,
-  variable descriptions, units, citations, providers, contacts, method
-  summaries, uncertainty explanations, scientific domains, and presentation
-  preferences. For temporal datasets, they also contain reviewed calendar,
-  precision, time origin, endpoint inclusion, timestep meaning, and whether a
-  timestamp represents an instant or aggregation period.
+- **META-002:** A curated file MUST contain:
+
+  - for the dataset: title, description, license, providers, and a
+    human-readable region name;
+  - for each variable: title, description, and unit, or an explicit `unitless`;
+  - for each categorical variable: the meaning of each encoded value; and
+  - for a temporal dataset: the reviewed calendar, precision, time origin,
+    endpoint inclusion, timestep meaning, and whether a timestamp represents an
+    instant or an aggregation period.
+
+  It MAY also contain citations and DOIs, contacts, method summaries,
+  uncertainty explanations, valid ranges, persistent identifiers, and a
+  category for each variable. A required field MUST NOT be recorded as unknown;
+  a product whose required meaning is unknown is left out of the release.
+  Curated files MUST NOT contain presentation choices, which live in the
+  application display document (Section 11).
 - **META-003:** Curated files MUST NOT contain observed CRS, transform, shape,
   spatial extent, nodata, datatype, pixel statistics, checksums, or byte sizes.
 - **META-004:** Before transformation, a resolved source manifest MUST identify
   the dataset, exact variable-to-URI mapping, cryptographic checksum for every
   source, source-band mapping to the reviewed temporal or spatial axis, and
-  per-variable output encoding policy. If an author-supplied manifest omits a
+  per-variable output encoding policy. It MUST also carry a `release` block of
+  release-scoped build inputs: the explicit `created` timestamp (REL-005), the
+  dataset's temporal `chunk_size`, and the COG creation options (Section 13).
+  If an author-supplied manifest omits a
   checksum, source preflight MUST calculate it by streaming the source and add
   it to the resolved manifest. The resolved manifest MUST then be frozen.
   Source manifests MUST NOT provide public descriptive or scientific temporal
   semantics.
 - **META-005:** Curated fields and source-manifest fields MUST be validated before
-  any source raster is transformed.
+  any source raster is transformed. Temporal values such as `0103` MUST be
+  strings in both documents; parsers MUST NOT coerce them to numbers.
+
 ### 7.2 Authoring format decision
-
-Three formats were evaluated:
-
-| Alternative | Advantages | Costs |
-| --- | --- | --- |
-| STAC Collection template in YAML | Familiar STAC names; smaller compiler | Templates contain output-only structure, extension placement, and placeholders; easy to mix observed and curated facts |
-| Dataset `science.toml` compiled to STAC | One typed declaration shared with a general research-object convention | Requires an unpublished schema SKOPE would have to help define, plus a profile-aware compiler; and the published counterpart duplicates STAC while being barred from acting as an authority |
-| Dataset `curated.yml` compiled to STAC | Strong authority boundary, no fake observed fields, no second document family, and long prose is readable and diffable in YAML block scalars | Requires a SKOPE-owned schema and compiler |
 
 **Decision:** use each dataset's `curated.yml` as the typed curated metadata
 source compiled to STAC. Its vocabulary SHOULD reuse STAC field names where
 semantics match, but the file is not itself a STAC Collection. The compiler owns
 placement of fields, extension declarations, structural links, and observed
-properties.
+properties. Section 20.5 records the alternatives considered.
 
 YAML is chosen because this content is predominantly long human prose —
 descriptions, uncertainty, method summaries — for which block scalars stay
 readable in review, and because the repository's existing curated metadata is
-already YAML. A published counterpart is not emitted: everything a consumer
-needs is in the STAC Collection, including SKOPE-specific fields under the
-`skope:` prefix (Section 10), so a second published descriptor would restate
-STAC while being forbidden from acting as an authority.
+already YAML.
+
+Curated authoring has no published counterpart. Everything a consumer needs is
+in the STAC Collection, including SKOPE-specific fields under the `skope:`
+prefix (Section 10), and the generated `overview.yml` (Section 16) gives a human
+reader that content in one flat file without walking the catalog.
 
 ## 8. Current metadata migration
 
@@ -563,16 +504,16 @@ shape.
 | `id` | STAC core | Collection `id` | Preserve the four identifiers. |
 | `title` | STAC core | Collection `title` | Curated. |
 | `description` | STAC core | Collection `description` | Curated CommonMark. |
-| `ordering` | SKOPE extension | `skope:display_order` | Presentation only. |
+| `ordering` | Presentation | Application display document | Dataset sort order on the home page; presentation, so not a release artifact. |
 | `type` | Deprecated | Removed from authority | Current value `dataset` is implicit in Collection type and is not retained in the new API contract. |
-| `status` | Requires human interpretation | Environment selection and possibly Version fields | `Published` is not equivalent to `deprecated` or `experimental`. |
+| `status` | Requires human interpretation | Dropped unless review confirms a second meaning (Section 21) | `Published` is not equivalent to `deprecated` or `experimental`. |
 | `revised` | STAC core | Collection `updated` after review | Determine whether it means source revision, metadata edit, or SKOPE publication. |
-| `region.zoom` | SKOPE extension | `skope:map_view.zoom` | Presentation only. |
-| `region.center` | SKOPE extension | `skope:map_view.center` | Current order appears latitude/longitude; target order is longitude/latitude, so values require review. |
-| `region.resolution` | Requires human interpretation | Curated prose, `gsd`, or derived grid resolution | Existing free text mixes angular and approximate linear resolution. |
-| `region.name` | Requires human interpretation | Keywords or description | No current controlled semantics. |
-| `region.style.color` | Style asset | Style JSON | Presentation only. |
-| `region.style.weight` | Style asset | Style JSON | Presentation only. |
+| `region.zoom` | Presentation | Application display document | Initial map camera; presentation. A client derives the default view by fitting the Collection spatial extent, and this is an override for when that fit reads poorly. |
+| `region.center` | Presentation | Application display document | As above. Current order appears latitude/longitude; the display document uses named `lon`/`lat` keys, so values require review rather than positional copying. |
+| `region.resolution` | Derived and removed | Computed from `grid.transform` when serializing or displaying | Existing free text mixes angular and approximate linear resolution and is unreliable: the `srtm` entry reads `250m` under the title `SRTM 90m Digital Elevation Model V4.1`. Do not migrate the string. |
+| `region.name` | SKOPE extension | `skope:region_name` | Curated area name; the UI renders it as the dataset subtitle. Free text, reviewed per dataset. |
+| `region.style.color` | Presentation | Application display document, dataset outline entry | Presentation. |
+| `region.style.weight` | Presentation | Application display document, dataset outline entry | Presentation. |
 | `region.extents` | Derived and removed | Collection spatial extent | Recompute in WGS 84 from output COG footprints. Existing coordinate order requires review. |
 | `timespan.resolution` | Existing STAC extension | `cube:dimensions.time.step` | Normalize to an ISO 8601 duration; Datacube is Candidate. |
 | `timespan.resolutionLabel` | Deprecated | Derived UI label | Do not preserve as authority. |
@@ -600,34 +541,36 @@ shape.
 | `units` | Existing STAC extension | Raster band `unit` and Datacube variable `unit` | Empty values remain absent; spelling requires review, not conversion by inference. |
 | `class` | SKOPE extension | `skope:variables.<id>.category` | Current strings are not a validated scientific vocabulary. |
 | `wmsLayer` | Derived and removed | None | Service-specific and stale; do not publish in scientific metadata. |
-| `min` | Requires human interpretation | No direct migration; reviewed scientific domain or default-style rescale endpoint | Preserve as evidence. Do not copy it into either target field automatically; generated observed statistics come only from bytes. |
-| `max` | Requires human interpretation | No direct migration; reviewed scientific domain or default-style rescale endpoint | Preserve as evidence. Do not copy it into either target field automatically; generated observed statistics come only from bytes. |
-| `visible` | SKOPE extension | `skope:variables.<id>.default_visible` | Presentation only. |
+| `min` | Requires human interpretation | No direct migration; reviewed valid range or default-style rescale endpoint | Preserve as evidence. Do not copy it into either target field automatically; generated observed statistics come only from bytes. |
+| `max` | Requires human interpretation | No direct migration; reviewed valid range or default-style rescale endpoint | Preserve as evidence. Do not copy it into either target field automatically; generated observed statistics come only from bytes. |
+| `visible` | Presentation | Application display document | Default selected variable; presentation. The current value is already inert — the UI overwrites it and defaults to the first variable in order. |
 | `styles` | Presentation | Application display document; not published in a release | Comma-delimited names require review and conversion. |
-| `colormap` | Presentation | Application display document, resolved against its palette document | A palette name is retained for review, and resolves to portable colour stops when the app registry is generated, so no deployment depends on a particular TiTiler installation's palette table. |
+| `colormap` | Presentation | Application display document, resolved against its palette document | A palette name is retained for review, and resolves to portable colour stops when the application composes its registry, so no deployment depends on a particular TiTiler installation's palette table. |
 | `timeseriesServiceUri` | Derived and removed | API route derived from identifiers | Not curated or treated as provenance; see API-006. |
 
 - **META-006:** Migration tooling MUST preserve ambiguous source text for review,
   MUST label its ambiguity, and MUST NOT infer whether current `min` and `max`
-  are observed ranges, scientific domains, or visualization ranges.
+  are observed ranges, valid ranges, or visualization ranges.
 - **META-007:** Migration and API output MUST keep generated observed ranges,
-  reviewed scientific domains, and reviewed visualization ranges as distinct,
-  explicitly named concepts. The API serializer MUST NOT flatten them into
-  legacy `min` and `max` fields.
+  reviewed valid ranges, and reviewed visualization ranges as distinct
+  concepts wherever they appear, and MUST NOT flatten them into legacy `min` and
+  `max` fields. In v1, valid ranges are curated review evidence and are
+  not published.
 - **META-008:** Curated metadata MUST own temporal scientific semantics. A source
   manifest MAY describe band positions, labels, or source timestamps only as a
   mapping to that reviewed axis and MUST NOT silently define or override its
   calendar, precision, origin, endpoint inclusion, instant/interval meaning, or
   aggregation period.
-- **META-009:** Curated PaleoCAR v3 metadata MUST define reviewed semantic roles
-  and required pairings for estimate and uncertainty products without embedding
-  source paths. The resolved source manifest MUST map those roles to exact
-  source URIs and checksums. Product selection MUST be declarative and MUST NOT
-  depend on filename convention or require a code or schema change. Changing a
-  selected product MUST create a new immutable release. If science review finds
-  that the change alters the scientific quantity or dataset version rather than
-  correcting its representation, publication MUST require a reviewed dataset
-  identifier or version decision.
+- **META-009:** When a dataset publishes uncertainty products alongside its
+  estimates, its curated metadata MUST define reviewed semantic roles and
+  required pairings for those products without embedding source paths. Section
+  21 records whether PaleoCAR v3 publishes them. The resolved source manifest
+  MUST map those roles to exact source URIs and checksums. Product selection
+  MUST be declarative and MUST NOT depend on filename convention or require a
+  code or schema change. Changing a selected product MUST create a new immutable
+  release. If science review finds that the change alters the scientific
+  quantity or dataset version rather than correcting its representation,
+  publication MUST require a reviewed dataset identifier or version decision.
 - **META-010:** Curated identity records MAY represent a person or organization.
   A person record MAY contain one canonical
   [ORCID URI](https://support.orcid.org/hc/en-us/articles/360006897674-Structure-of-the-ORCID-Identifier)
@@ -648,13 +591,13 @@ shape.
   authoring input, but a build MUST resolve and snapshot explicitly selected
   identities before publication and MUST NOT depend on project files at runtime.
 - **META-012:** Legacy variable `min` and `max` values MUST be retained only as
-  migration evidence and MUST NOT be assigned an observed-range, scientific-domain,
-  or visualization-range meaning automatically. Each variable's scientific
-  domain and default visualization range MUST be reviewed independently; either
+  migration evidence and MUST NOT be assigned an observed-range, valid-range,
+  or visualization-range meaning automatically. Each variable's valid
+  range and default visualization range MUST be reviewed independently; either
   MAY be absent when evidence is insufficient.
 
-Examples illustrate the ambiguity: LBDA's `-6` to `6` reads like a scientific or
-display domain; SRTM's `0` to `4500` reads like a display range; PaleoCAR v2's
+Examples illustrate the ambiguity: LBDA's `-6` to `6` reads like a valid or
+display range; SRTM's `0` to `4500` reads like a display range; PaleoCAR v2's
 several `0` to `10` ranges are not documented as byte observations. No target
 meaning is assigned without stakeholder evidence.
 
@@ -683,14 +626,18 @@ reviewed specification change and compatibility fixtures.
 - **STAC-001:** Every dataset Collection MUST validate as STAC 1.1.0 and MUST
   contain `type`, `stac_version`, `stac_extensions`, stable `id`, `title`,
   `description`, reviewed `license`, `providers`, spatial and temporal `extent`,
-  `links`, and the profile-specific asset fields defined below. See the
+  `links`, and the profile-specific asset fields defined below. It is the root
+  STAC object of its release (ORG-013) and MUST be reachable at
+  `<release-id>/collection.json`. See the
   [STAC Collection fields](https://github.com/radiantearth/stac-spec/blob/master/collection-spec/collection-spec.md#collection-fields).
 - **STAC-002:** A Collection MUST declare only extension schema URLs actually
   used at Collection scope. Extension URLs MUST equal the pinned versions in
   Section 9.1.
 - **STAC-003:** A `TemporalCubeDataset` Collection MUST describe all expected
   variable asset keys in `item_assets` and MUST carry Datacube dimensions and
-  variables. Its `cube:dimensions.time.values` MUST enumerate the complete,
+  variables; each `cube:variables` entry MUST carry the required `dimensions`
+  and `type`. Its temporal dimension MUST carry the required `extent`, and its
+  `values` MUST enumerate the complete,
   unique, ordered canonical temporal axis rather than relying only on extent
   and step.
 - **STAC-004:** A temporal Collection's spatial and temporal extents MUST be
@@ -758,8 +705,8 @@ and checking every overlapping value.
 
 ## 10. SKOPE extension
 
-The proposal defines a minimal Collection-scoped SKOPE extension for
-presentation and domain context that existing STAC fields do not express.
+The proposal defines a minimal Collection-scoped SKOPE extension for scientific
+context that existing STAC fields do not express.
 
 ### 10.1 Fields
 
@@ -768,14 +715,10 @@ carried here, on the Collection. There is no separate published descriptor: the
 Collection plus this extension is the single published place to look.
 
 ```yaml
-skope:display_order: 2
-skope:map_view:
-  center: { lon: -110.0, lat: 36.5 }
-  zoom: 4
+skope:region_name: "Southwestern USA"
 skope:variables:
   ppt_water_year:
     category: precipitation
-    default_visible: false
 skope:uncertainty:
   summary: "Curated summary supported by the dataset documentation."
   methodology_href: null
@@ -783,26 +726,22 @@ skope:uncertainty:
 
 | Field | Type | Requirement |
 | --- | --- | --- |
-| `skope:display_order` | integer | Optional; lower values sort first. |
-| `skope:map_view` | object | Optional; when present contains both `center` and `zoom`. |
-| `skope:map_view.center` | object with finite `lon` and `lat` | Named keys, not a positional pair: longitude `[-180,180]`, latitude `[-90,90]`. The legacy registry stored latitude first, so a positional array silently inverts on migration. |
-| `skope:map_view.zoom` | finite number | Optional recommended map zoom. A client SHOULD derive the initial view by fitting the Collection spatial extent, because a correct zoom depends on viewport aspect ratio; this value is an override for when that fit reads poorly. |
-| `skope:variables` | map keyed by variable ID | Required for variables with SKOPE-specific category or visibility metadata. |
-| `category` | non-empty string | Optional scientific-domain label from the reviewed SKOPE vocabulary. |
-| `default_visible` | boolean | Optional; defaults to `false` in generated API output. |
+| `skope:region_name` | non-empty string | Curated human-readable name for the covered area, such as `"Southwestern USA"`. STAC has no structured field for it and a bounding box does not yield one, so it is carried here and authored in `curated.yml`. It names the area the data describes and is therefore descriptive, not presentational. |
+| `skope:variables` | map keyed by variable ID | Required for variables with SKOPE-specific category or categorical metadata. |
+| `category` | non-empty string | Optional subject category, such as precipitation or temperature, from the reviewed SKOPE vocabulary. |
 | `categories` | map of encoded value to label | Required for a categorical variable: what each encoded value means. Colours and display strings are presentation and live in the application repository (Section 11); this field is the scientific meaning, without which extraction results and external STAC consumers see bare numbers. |
 | `skope:uncertainty` | object | Optional; contains non-empty `summary` and nullable `methodology_href`. |
 
 - **SKOPE-001:** The extension MUST be scoped to STAC Collections and MUST NOT
   duplicate a field provided by STAC core or a pinned extension.
-- **SKOPE-002:** Map centers MUST use longitude, latitude order and valid WGS 84
-  ranges.
-- **SKOPE-003:** Every `skope:variables` key MUST equal a Datacube variable and
-  a data-asset key in the same Collection: an `item_assets` key for a temporal
-  dataset or a Collection `assets` key for a static dataset.
-- **SKOPE-004:** A Collection MUST NOT reference a style asset. Presentation is
-  not a release concern (Section 11), so no `skope:` field may name a colormap,
-  colour stops, a visualization range, a legend, or a rendering document.
+- **SKOPE-003:** Every `skope:variables` key MUST equal a data-asset key in the
+  same Collection (an `item_assets` key for a temporal dataset or a Collection
+  `assets` key for a static dataset) and, when the Collection carries Datacube
+  variables, a Datacube variable.
+- **SKOPE-004:** Every `skope:` field MUST describe the data. A choice about how
+  the data is shown — ordering, camera position, default selection, outline
+  drawing, colour, or legend — is presentation, changes on the application's
+  cadence, and belongs in the display document (Section 11).
 - **SKOPE-005:** Categories SHOULD come from a versioned, documented vocabulary.
   Until that vocabulary is approved, validation reports unknown values as
   warnings and preserves the source term without assigning new semantics.
@@ -817,8 +756,8 @@ skope:uncertainty:
   contract change MUST increment the minor version and patch releases MUST NOT
   change accepted instances or field meaning. `v1.0.0` MUST NOT be published
   until the extension is approved as stable.
-- **SKOPE-008:** `methodology_href`, when non-null, MUST be relative or HTTPS and
-  MUST resolve during release validation.
+- **SKOPE-008:** `methodology_href`, when non-null, MUST be an absolute HTTPS
+  URL and MUST resolve during release validation.
 - **SKOPE-009:** Versioned SKOPE schemas MUST be served as static files directly
   by the nginx infrastructure for `api.openskope.org`; schema requests MUST NOT
   depend on FastAPI or WordPress availability. Exact-version URLs MUST support
@@ -853,21 +792,17 @@ Three placements were evaluated:
 | One display document in the application repository | Presentation changes are reviewed where the application is built, diffable in version control, and cannot affect release identity. Requires the API to serve rendering fields explicitly rather than the client inventing them. |
 
 **Decision:** presentation lives in one document in the application repository,
-alongside a palette document it references. No style asset, colormap, colour
-stop, visualization range, legend definition, or rendering projection is
-emitted into a release, and no `skope:` field names one.
+alongside a palette document it references. Presentation is not a release
+artifact, and no `skope:` field carries a presentation choice.
 
 Colours are named there and resolved to portable stops when the application
-registry is generated, so a deployment never depends on the palette table that a
+composes its registry, so a deployment never depends on the palette table that a
 particular TiTiler build happens to ship.
 
-- **STYLE-001, STYLE-003, STYLE-004, STYLE-005, STYLE-007, STYLE-008:
-  withdrawn.** They defined a release-resident style asset, its schema, its
-  Collection reference, and an optional STAC Rendering projection.
 - **STYLE-002:** A continuous style MUST distinguish a visualization range from
-  observed statistics and from the scientific domain. Both endpoints MUST be
+  observed statistics and from the valid range. Both endpoints MUST be
   finite and the lower endpoint MUST be less than the upper endpoint. The
-  scientific domain remains curated and published in STAC; the visualization
+  valid range remains curated; the visualization
   range is a presentation choice and is not published as a release artifact.
 - **STYLE-006:** The API MUST derive explicit rendering, rescale, colormap, and
   legend fields from the selected display entry. It MUST NOT emit ambiguous
@@ -886,9 +821,16 @@ particular TiTiler build happens to ship.
 The display document describes every variable the application renders. Each
 entry requires a palette name and a range; rendering type, ticks, provenance,
 and category label overrides are optional. A build MUST fail when a variable
-present in the release being built against has no entry, so that no variable is
+present in the deployment's release set has no entry, so that no variable is
 rendered by an unreviewed default. Entries for variables absent from that
-release are permitted, because a development release may contain a subset.
+release set are permitted, because a development deployment may pin a subset of
+datasets or a release containing a subset of variables.
+
+The document also carries the dataset-level display choices: where a dataset
+sorts in the list, how its outline is drawn, where the map opens, which variable
+is selected by default, and the order variables appear in. These follow the same
+cadence argument as colour — none of them is a property of the data, and none
+should require republishing an immutable release to change.
 
 ```yaml
 defaults:
@@ -896,12 +838,36 @@ defaults:
   ticks: 5
   nodata: transparent
 
-paleocar_v3:
-  ppt_annual:
-    palette: skope-precip
-    range: [0, 1800]
-    note: "98th percentile over 0103-2000; upper tail compressed"
+datasets:
+  paleocar_v3:
+    order: 20
+    outline:
+      color: blue
+      weight: 2
+    map_view:
+      center: { lon: -108.5, lat: 37.0 }
+      zoom: 6
+    default_variable: ppt_annual
+    variables:
+      ppt_annual:
+        order: 10
+        palette: skope-precip
+        range: [0, 1800]
+        note: "98th percentile over 0103-2000; upper tail compressed"
 ```
+
+- **STYLE-010:** Ordering MUST be expressed by an explicit numeric `order` field
+  on each dataset and variable entry, and a client MUST sort by it rather than
+  by document order. Mapping key order carries no meaning in YAML, and REL-004's
+  stable ordering may serialize keys alphabetically, so relying on file order
+  would make presentation depend on a serializer detail.
+- **STYLE-011:** `map_view` MUST use named `lon` and `lat` keys with valid WGS 84
+  ranges, never a positional pair, because the legacy registry stored latitude
+  first and a positional array inverts silently on migration. `map_view` is
+  optional: a client MUST derive the initial view by fitting the Collection's
+  spatial extent, and `map_view` overrides that fit when it reads poorly.
+- **STYLE-012:** `default_variable` MUST name a variable present in the dataset's
+  release. When it is absent, a client selects the lowest-ordered variable.
 
 Categorical variables name a palette in the same way, and colours bind to
 categories in order. What each encoded value *means* stays in curated metadata
@@ -934,19 +900,19 @@ The model represents:
 - per-variable input and output encoding, including datatype, nodata, scale,
   offset, units, compression, predictor, overview resampling, and interleave;
 - provenance, processing software, and source identity; and
-- source and generated COG sizes and checksums; serialized STAC, style, lookup,
-  and manifest inventories are measured separately after serialization.
+- source and generated COG sizes and checksums; serialized STAC, overview, and
+  manifest inventories are measured separately after serialization.
 
 ### 12.2 Lifecycle
 
-The release compiler resolves the authoritative declaration graph — each
-dataset's `curated.yml`, its resolved source manifest, the referenced input
-checksums, and the set of datasets selected for the release — together with
-complete source preflight into the `ValidatedBuildPlan`. That plan contains the
-intended COG encoding and chunk layout, and the COG writer consumes only this
-compiled form. After every COG is written, the byte inspector reopens all
-outputs and constructs a `FinalObservation` from measured byte facts. STAC, the
-app registry, and API serializers consume only the final observation. Manifest
+The release compiler resolves the authoritative declaration graph — the
+dataset's `curated.yml`, its resolved source manifest, and the referenced input
+checksums — together with complete source preflight into the
+`ValidatedBuildPlan`. That plan contains the intended COG encoding and chunk
+layout, and the COG writer consumes only this compiled form. After every COG is written, the byte inspector reopens all
+outputs and constructs a `FinalObservation` from measured byte facts. STAC
+serializers consume only the final observation, and the release overview is
+generated from the resulting validated STAC (API-001). Manifest
 generation consumes the final observation plus an exhaustive inventory of the
 serialized files and their measured sizes and checksums.
 
@@ -955,14 +921,15 @@ serialized files and their measured sizes and checksums.
 - **OBS-001:** The source manifest variable set MUST equal the curated dataset
   variable set and the output variable set. Duplicate, missing, and additional
   identifiers MUST fail before transformation.
-- **OBS-002:** Source preflight MUST inspect every input for every dataset in the
-  requested root release before creating any release output.
+- **OBS-002:** Source preflight MUST inspect every input of a requested dataset
+  before creating any release output for that dataset.
 - **OBS-003:** Source grids intended to align MAY differ only within an explicit,
   unit-aware tolerance recorded by the build plan. Differences beyond tolerance
-  MUST fail or require an explicit reprojection plan. Output assets in one
-  aligned Item MUST have an identical canonical CRS, transform, shape, and
-  footprint.
-- **OBS-004:** A regular temporal step MUST be positive. The generated sequence
+  MUST fail or require an explicit reprojection plan. All output assets of a
+  dataset MUST share one canonical CRS, transform, shape, and footprint; a
+  variable on a different grid belongs to a separate dataset.
+- **OBS-004:** A temporal axis MUST declare whether it is regular or enumerated
+  (API-004). A regular temporal step MUST be positive. The generated sequence
   MUST contain unique, strictly increasing timesteps and terminate exactly at
   its declared endpoint.
 - **OBS-005:** Each temporal source variable's band count MUST equal the number
@@ -977,7 +944,7 @@ serialized files and their measured sizes and checksums.
 - **OBS-007:** Every modeled statistic MUST be finite and MUST state its scope.
   A band with no valid pixels MUST fail unless the curated dataset policy
   explicitly permits and represents that condition.
-- **OBS-008:** Nodata MUST be representable by the output datatype, MUST not
+- **OBS-008:** Nodata MUST be representable by the output datatype, MUST NOT
   collide with a valid encoded value, and MUST remain consistent with mask,
   scale, and offset semantics.
 - **OBS-009:** Scale and offset MUST be finite, MUST be defined per variable,
@@ -994,11 +961,10 @@ serialized files and their measured sizes and checksums.
   immutable only after all output COGs have been reopened, byte-level
   observations have replaced planned values, and all applicable invariants
   pass.
-- **OBS-013:** The COG writer MUST consume only a `ValidatedBuildPlan`. STAC,
-  lookup, registry, and API serializers MUST consume only a
-  `FinalObservation`; they MUST NOT consume planned output facts. Manifest
-  generation MUST consume the `FinalObservation` and a measured exhaustive file
-  inventory.
+- **OBS-013:** The COG writer MUST consume only a `ValidatedBuildPlan`. STAC
+  serializers MUST consume only a `FinalObservation`; they MUST NOT consume
+  planned output facts. Manifest generation MUST consume the `FinalObservation`
+  and a measured exhaustive file inventory.
 
 The tolerance in OBS-003 is for deciding whether source grids represent the
 same intended grid, not for hiding output disagreement. The legacy PaleoCAR v2
@@ -1085,16 +1051,15 @@ The GDAL driver documents `BLOCKSIZE=512`, automatic overview generation, and
   truncation or overflow occurs.
 - **COG-015:** Validation and metadata MUST distinguish four value spaces:
   embedded COG and matching STAC statistics in native encoded pixel space;
-  physical values computed as `encoded * scale + offset`; reviewed scientific
-  valid domains; and visualization rescale ranges. A value or range MUST NOT be
+  physical values computed as `encoded * scale + offset`; reviewed valid
+  ranges; and visualization rescale ranges. A value or range MUST NOT be
   copied between spaces without an explicit labeled conversion and scope.
-- **COG-016:** The PaleoCAR v3 reference build MUST preserve each selected
-  source product's inspected datatype, nodata, scale, and offset;
-  current source inspection therefore establishes `UInt32` as the provisional
-  output datatype. A `UInt16` override MAY be approved only per variable after
-  EXP-004 proves exact representability and measurable operational benefit.
-  Nontrivial scale/offset packing, rounding, or other lossy quantization is not
-  part of that experiment and MUST require separate science review.
+- **COG-016:** Output encoding MUST preserve each selected source product's
+  inspected datatype, nodata, scale, and offset. A narrower datatype MAY be
+  approved only per variable, after an experiment such as EXP-004 proves exact
+  representability and a measurable operational benefit. Nontrivial
+  scale/offset packing, rounding, or other lossy quantization MUST require
+  separate science review.
 
 A dataset-wide UInt16 switch is insufficient because LBDA contains negative
 values, PaleoCAR variables have different value distributions and units, and
@@ -1108,27 +1073,32 @@ incubating, so SKOPE pins and validates its own chosen representation and does
 not claim Portolan conformance solely from using it. See the
 [Portolan GeoTIFF statistics-header proposal](https://github.com/portolan-sdi/portolan-spec/blob/main/specs/incubating/geotiff-stats-headers.md).
 
-## 14. Release manifests
+## 14. Release manifest
 
-Release manifests are integrity and publication records, not geospatial metadata
-sidecars. Their schemas are conceptually separate and versioned independently.
+The release manifest is an integrity and publication record, not a geospatial
+metadata sidecar. Its schema is versioned independently of the STAC profile.
 
-### 14.1 Root manifest
+A release carries exactly one manifest. It records release and dataset identity,
+every source with its checksum, and one exhaustive inventory of the published
+files.
 
-A release carries exactly one manifest. It records release identity, the
-selected dataset composition, every source with its checksum, and one
-exhaustive inventory of the published files.
-
-The example object records use the File Info extension's valid SHA-256
-multihash for a four-byte `test` fixture. Production records use each actual
-object's measured size and digest as required by MAN-005.
+The example object records the File Info extension's valid SHA-256 multihash for
+a four-byte `test` fixture. Production records use each actual object's measured
+size and digest as required by MAN-005. File and source checksums use the File
+Info multihash form so they compare directly with STAC `file:checksum`; the
+declaration digest is plain hexadecimal with its algorithm named beside it.
 
 ```json
 {
   "schema_version": "1.0.0",
-  "release_id": "skope-r-2026.09.12",
+  "release_id": "paleocar_v2-r-2026.09.12",
   "created": "2026-09-12T15:45:30Z",
   "status": "complete",
+  "dataset": {
+    "id": "paleocar_v2",
+    "version": "2",
+    "stac_entrypoint": "collection.json"
+  },
   "producer": {
     "name": "skope-api dataset pipeline",
     "version": "0.1.0",
@@ -1137,53 +1107,36 @@ object's measured size and digest as required by MAN-005.
   "declaration": {
     "identity_profile": "openskope-release-declaration-v1",
     "digest_algorithm": "sha256",
-    "digest": "a8c92e7d4b131029ea9fd04cd7d8ba3131d058cdaf5127add24dc68c175dc13f"
+    "digest": "3d1f7a0c2b9e48d6a5c7e1f04b2d9c83e6a1f5b7d0c49e2a8b3f6d1c7e05a924"
   },
-  "orchestration": {
-    "provider": "temporal",
-    "request_id": "dataset-release/skope-r-2026.09.12",
-    "namespace": "skope-production"
-  },
-  "catalog": {
-    "href": "catalog.json",
-    "size": 4,
-    "checksum": "12209f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
-  },
-  "datasets": [
+  "sources": [
     {
-      "id": "paleocar_v2",
-      "version": "2",
-      "stac_entrypoint": "paleocar_v2/stac/collection.json",
-      "sources": [
-        {
-          "id": "gdd_may_sept",
-          "href": "https://example.invalid/gdd_may_sept.tif",
-          "checksum": "12209f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
-        }
-      ]
+      "id": "gdd_may_sept",
+      "href": "https://example.invalid/gdd_may_sept.tif",
+      "checksum": "12209f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
     }
   ],
   "files": [
     {
-      "path": "catalog.json",
-      "roles": ["stac", "catalog"],
-      "size": 4,
-      "checksum": "12209f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
-    },
-    {
-      "path": "paleocar_v2/stac/collection.json",
+      "path": "collection.json",
       "roles": ["stac", "collection"],
       "size": 4,
       "checksum": "12209f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
     },
     {
-      "path": "paleocar_v2/stac/items/paleocar_v2--0001--2000.json",
+      "path": "overview.yml",
+      "roles": ["derived"],
+      "size": 4,
+      "checksum": "12209f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+    },
+    {
+      "path": "items/paleocar_v2--0001--2000.json",
       "roles": ["stac", "item"],
       "size": 4,
       "checksum": "12209f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
     },
     {
-      "path": "paleocar_v2/cogs/gdd_may_sept/paleocar_v2--0001--2000.tif",
+      "path": "cogs/gdd_may_sept/paleocar_v2--0001--2000.tif",
       "roles": ["data"],
       "size": 4,
       "checksum": "12209f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
@@ -1192,51 +1145,52 @@ object's measured size and digest as required by MAN-005.
 }
 ```
 
-- **MAN-001:** The root manifest MUST validate against a versioned JSON Schema
-  and MUST reject unknown fields by default.
-- **MAN-002:** For each selected dataset the root manifest MUST record its
-  dataset ID and version, its STAC entrypoint path, and its source references
-  with checksums.
-- **MAN-003:** The root manifest MUST identify the root release, creation time,
-  `complete` status, producer identity and version, declaration identity
-  profile, digest algorithm and full digest, root Catalog path/size/checksum,
-  and one exhaustive `files` inventory containing the role, path, size, and
-  checksum of every published STAC object, data object, and derived artifact in
-  the release. Its release and declaration fields MUST agree with the resolved
-  release declaration.
-- **MAN-004:** Manifests MUST NOT contain CRS, transform, shape, spatial or
+- **MAN-001:** The manifest MUST validate against a versioned JSON Schema and
+  MUST reject unknown fields by default.
+- **MAN-002:** The manifest MUST record the release's dataset ID and version, its
+  STAC entrypoint path, and its source references with checksums.
+- **MAN-003:** The manifest MUST identify the release, creation time, `complete`
+  status, producer identity and version, declaration identity profile, digest
+  algorithm and full digest, and one exhaustive `files` inventory containing the
+  role, path, size, and checksum of every published STAC object, data object, and
+  derived artifact in the release. Its release and declaration fields MUST agree
+  with the resolved release declaration.
+- **MAN-004:** The manifest MUST NOT contain CRS, transform, shape, spatial or
   temporal coverage, nodata, datatype, scale, offset, units, or statistics.
 - **MAN-005:** Manifest paths MUST be release-relative and obey ORG-008. Each
   size and checksum MUST match the final object bytes.
-- **MAN-006:** The root manifest MUST list every file in the release except
-  itself, and MUST NOT attempt to checksum itself.
-- **MAN-007:** `dataset-facts.json` MUST be eliminated from the cleanroom target
-  architecture and MUST NOT be read by registry or publication tooling.
-- **MAN-008:** Only a valid root manifest is the publication commit marker. A
-  release becomes visible when that manifest is written last and validates.
-- **MAN-009:** Each dataset's `stac_entrypoint` MUST resolve to exactly one
-  `files` record with `stac` and `collection` roles. File roles MUST come from
-  the manifest schema's controlled vocabulary, initially `stac`, `catalog`,
-  `collection`, `item`, `data`, and `derived`; a file MAY have multiple roles.
-- **MAN-010:** A root manifest MAY record a compact, provider-neutral
-  orchestration reference containing `provider`, application-level
-  `request_id`, and an optional non-secret namespace or endpoint identifier. It
-  MUST NOT embed an orchestration event history, mutable execution status,
-  credentials, queue state, retry counts, or a platform run identifier as the
-  release identity.
-
-### 14.3 Replacement of `dataset-facts.json`
-
-| PR 48 responsibility | Cleanroom replacement |
-| --- | --- |
-| Dataset identity | Collection `id`; per-dataset identity record in the root manifest |
-| CRS and transform | COG bytes plus Projection fields |
-| Dataset timespan | Typed temporal axis, Collection extent, and Items |
-| Variable minimum and maximum | Embedded per-band COG statistics and Raster fields; explicit aggregate summaries only when scope is defined |
-| Source URI | STAC provenance link plus source entry/checksum in the root manifest |
-| Partial-run compatibility check | Immutable typed model and staged whole-dataset build validation |
-| Registry build input | Validated STAC Collections |
-| Evidence that output exists | Checksummed root manifest acting as the publication marker |
+- **MAN-006:** The manifest MUST list every file in the release except itself, and
+  MUST NOT attempt to checksum itself.
+- **MAN-008:** Only a valid manifest is the publication commit marker. A release
+  becomes visible when that manifest is written last and validates.
+- **MAN-009:** The `stac_entrypoint` MUST resolve to exactly one `files` record
+  with `stac` and `collection` roles. File roles MUST come from the manifest
+  schema's controlled vocabulary, initially `stac`, `collection`, `item`, `data`,
+  and `derived`; a file MAY have multiple roles. A file whose role is not in that
+  vocabulary MUST fail validation (REL-009).
+- **MAN-010:** A manifest MAY record a compact, provider-neutral orchestration
+  reference containing `provider`, application-level `request_id`, and an
+  optional non-secret namespace or endpoint identifier. It MUST NOT embed an
+  orchestration event history, mutable execution status, credentials, queue
+  state, retry counts, or a platform run identifier as the release identity.
+- **MAN-011:** Independently of its release ID, a release MUST record in its
+  manifest the full lowercase hexadecimal SHA-256 digest of an RFC 8785
+  canonical JSON projection of its fully resolved release declaration graph and
+  all referenced build-input checksums. The projection MUST identify itself with
+  `identity_profile = openskope-release-declaration-v1`, apply validated schema
+  defaults, preserve semantically ordered arrays, and normalize unordered
+  collections before serialization. It MUST include the source manifest's
+  `release` block, including the explicit `release.created` value, and MUST
+  exclude the release ID, the declaration digest itself, generated output
+  references, generated bytes, staging or host paths, request and workflow
+  metadata, and publication-completion state. See the [JSON Canonicalization
+  Scheme](https://www.rfc-editor.org/rfc/rfc8785.html).
+- **MAN-012:** A retry or reproducibility rebuild of one frozen declaration MUST
+  retain its release ID, creation timestamp, identity profile, and full
+  declaration digest. A published release ID MUST NOT be associated with a
+  different declaration digest; a changed declaration MUST receive a new release
+  identifier before publication even when its intended output bytes are
+  unchanged.
 
 ## 15. Transaction and publication semantics
 
@@ -1250,26 +1204,27 @@ object's measured size and digest as required by MAN-005.
   3. construct and freeze the `FinalObservation`;
   4. generate STAC and derived artifacts;
   5. complete every pre-manifest validation pass;
-  6. write the root manifest last after final cross-artifact validation; and
+  6. write the release manifest last after final cross-artifact validation; and
   7. atomically rename the staging directory to a previously absent release
      path.
 - **TXN-002:** Local publication MUST fail if the destination exists, staging and
   destination are on different filesystems, or the platform cannot provide the
   required atomic rename semantics.
 - **TXN-003:** Readers MUST ignore staging directories and any final-looking
-  directory without a valid root manifest.
+  directory without a valid release manifest.
 
 ### 15.2 Object-storage publication
 
 S3 and compatible object stores do not provide a multi-object atomic
-transaction. The root manifest supplies an application-level commit protocol.
+transaction. The release manifest supplies an application-level commit protocol.
 
 - **TXN-004:** An object-storage build MUST use a unique immutable prefix and
-  MUST upload data, STAC, and derived artifacts before the root manifest.
+  MUST upload data, STAC, and derived artifacts before the release manifest.
 - **TXN-005:** The publisher MUST verify uploaded sizes and cryptographic
-  checksums, and MUST write the valid root manifest last.
-- **TXN-006:** Readers and registry builders MUST ignore any prefix without a
-  valid root manifest whose referenced objects pass integrity validation.
+  checksums, and MUST write the valid release manifest last.
+- **TXN-006:** Readers MUST ignore any prefix without a valid release manifest.
+  Full integrity validation of the referenced objects happens at promotion
+  (TXN-011).
 - **TXN-007:** Retrying a publication MUST be idempotent: an object already at
   the immutable prefix MAY be reused only after its size and checksum match the
   planned object; a mismatch MUST fail without overwrite.
@@ -1284,17 +1239,25 @@ transaction. The root manifest supplies an application-level commit protocol.
 - **TXN-010:** Existing COGs MUST NOT be trusted solely because a filename
   exists. Reuse requires matching source/build identity, expected checksum, COG
   validation, and cross-artifact agreement.
-- **TXN-011:** A local deployment MUST select an explicit immutable
-  `<release-storage-root>/<release-id>` directory, validate its root manifest,
-  and mount the same resolved physical directory read-only into the API and
-  TiTiler. A mutable symlink or pointer MUST NOT be the deployed bind-mount
-  source. Promotion and rollback MUST recreate both containers with the newly
-  selected explicit path and record the selected release ID and resolved path
-  in deployment state.
+- **TXN-011:** A local deployment MUST mount one release storage root
+  read-only, by its resolved physical path, into both the API and TiTiler, and
+  MUST select each pinned release as `<release-storage-root>/<release-id>`
+  within it. A mutable symlink or pointer MUST NOT be a bind-mount source.
+  Promotion MUST fully verify each newly pinned release, checking every file's
+  size and checksum against its manifest, and MUST record each selected release
+  ID, declaration digest, manifest digest, resolved path, and verification
+  result in deployment state. At startup, the API MUST check each pinned
+  release's manifest digest and overview (API-012) and that every inventoried
+  file exists with its recorded size. Promotion and rollback MUST recreate both
+  containers. Promoting one dataset MUST NOT require re-selecting the others.
+- **TXN-017:** An object-storage deployment MUST read each pinned release
+  directly from `<release-storage-prefix>/<release-id>/` through GDAL's
+  object-storage access, without copying it to local storage, and MUST apply the
+  promotion and startup verification of TXN-011.
 - **TXN-012:** Cleanup tooling MUST first produce a read-only, deterministic
   report for one exact staging directory, object prefix, or set of incomplete
   multipart upload IDs. The report MUST identify the request and declaration
-  digest when known; root-manifest validity; active lease or workflow state;
+  digest when known; release-manifest validity; active lease or workflow state;
   selected-release references; last observed activity; object and upload-part
   counts, sizes, and checksums when available; retry feasibility; and the exact
   proposed deletion scope. Repeating the report against unchanged observed
@@ -1309,7 +1272,7 @@ transaction. The root manifest supplies an application-level commit protocol.
   constitute sufficient authorization.
 - **TXN-014:** Reporting, authorization, and execution MUST be separately
   observable steps. Cleanup execution MUST re-run all safety checks after the
-  grace period and MUST fail closed if a valid root manifest, active lease or
+  grace period and MUST fail closed if a valid release manifest, active lease or
   workflow, selected-release reference, changed report digest, expanded scope,
   or new or changed object is found.
 - **TXN-015:** Cleanup execution MUST be idempotent. Repeating one authorized
@@ -1363,23 +1326,34 @@ and [Activities](https://docs.temporal.io/activities).
   transaction or as evidence that an output is valid.
 - **ORCH-005:** Workflow code MUST coordinate deterministic state transitions;
   filesystem access, source retrieval, GDAL execution, checksumming, object
-  upload, and publication pointer updates MUST occur through Activities or an
+  upload, and release-manifest publication MUST occur through Activities or an
   equivalent explicit side-effect boundary.
-- **ORCH-006:** A root workflow SHOULD coordinate one independently retryable
-  dataset build per selected dataset. Every dataset build MUST complete and pass
-  validation before the root workflow may write the root manifest.
+- **ORCH-006:** A workflow coordinating a multi-dataset invocation SHOULD
+  coordinate one independently retryable build per requested dataset. Each build
+  MUST write its own release manifest on its own completion and, once preflight
+  is complete (MIG-004), MUST NOT wait on a sibling build.
 - **ORCH-007:** Human approvals MAY be captured through durable workflow
   messages. Approval identity and operational event history MUST remain
   workflow provenance, not scientific metadata or release authority; any
   approved change that affects scientific meaning or output bytes MUST first be
   incorporated into a new resolved release declaration.
+- **ORCH-009:** One build invocation MAY request several datasets. Such an
+  invocation is a batch, not a package: it MUST produce one independent release
+  per requested dataset, each with its own release ID, declaration digest,
+  manifest, and commit marker. A batch MUST NOT be assigned an identifier,
+  declaration digest, manifest, or commit marker of its own, and a batch request
+  document MUST be treated as operational input rather than part of any
+  release's declaration graph (MAN-011). A batch in which some datasets succeed
+  and others fail is a normal outcome: the successful releases are complete and
+  publishable, and the failed datasets are retried independently. No combined
+  rollback exists, because no combined commit was made.
 - **ORCH-008:** Closed workflow history MAY be retained according to operational
   policy rather than release-retention policy. Before workflow history expires,
   a successful execution MUST leave a provider-neutral completion record that
   relates request ID, declaration digest, producer, start and completion times,
-  outcome, release ID, and root-manifest reference in a deployment-selected
+  outcome, release ID, and release-manifest reference in a deployment-selected
   durable operational audit store outside the dataset release. The record MUST
-  NOT replace the root manifest, and a complete Temporal Event History MUST NOT
+  NOT replace the release manifest, and a complete Temporal Event History MUST NOT
   be copied into the dataset release.
 
 ## 16. Registry and API/UI protocol
@@ -1387,26 +1361,39 @@ and [Activities](https://docs.temporal.io/activities).
 ### 16.1 Release-to-application data flow
 
 A release serves the SKOPE application as well as external researchers, so what
-the application needs MUST be a stated, generated consequence of the release
+each audience needs MUST be a stated, generated consequence of the release
 rather than a parallel curated document maintained beside it. The final step of
-a release build compacts everything the application reads into one **app
-registry**, generated deterministically from validated STAC.
+a release build compacts that content into one **release overview**,
+`overview.yml`, generated deterministically from that release's validated STAC.
 
-| Application need | Source in the release |
+The overview serves both audiences with one artifact. A human reader gets the
+dataset's variables, units, coverage, provenance, and temporal rule in one flat
+file without walking a catalog of Items. The application gets exactly the fields
+it needs at runtime. Because it is generated and byte-compared rather than
+authored, it cannot drift from the STAC it was derived from, which is what
+distinguishes it from a hand-maintained descriptor beside the data.
+
+A deployment serves the overviews of its pinned release set, composed into the
+**app registry**. Composition selects and concatenates; it never edits.
+
+| Consumer need | Source in the release |
 | --- | --- |
 | Dataset and variable allowlist for request validation | Collection `id` and asset keys |
 | CRS and transform for request-size limits and extraction reads | Asset-level `proj:code` and `proj:transform` |
 | Spatial extent for the dataset outline | Collection spatial extent |
 | Temporal bounds and resolution for default extraction ranges | Collection temporal extent and `cube:dimensions.time` |
 | Time-to-band mapping for tiles and extraction | The derived rule (API-004) |
-| Units for legends | Asset `unit` and `cube:variables` |
-| Titles, descriptions, citations, provenance, uncertainty | Collection core fields, `sci:` fields, and links |
-| Ordering, category, default visibility, map view, category meanings | `skope:` fields on the Collection |
-| Release identity for integrity checks and support | Root manifest release ID and declaration digest |
+| Units, scale, and offset for legends and physical values | Asset `unit`, `raster:scale`, `raster:offset`, and `cube:variables` |
+| Titles, descriptions, citations, provenance, lineage, uncertainty | Collection core fields, `sci:` fields, `processing:lineage`, and links |
+| Region name, category, categorical value meanings | `skope:` fields on the Collection |
+| Release identity for integrity checks and support | Release manifest release ID and declaration digest |
 
-- **API-001:** The registry builder MUST read validated STAC Collections. It
-  MUST NOT read `dataset-facts.json`, a curated authoring document, or the
-  display document.
+Ordering, map view, default variable selection, and outline drawing are not in
+this table. They are presentation, and they come from the display document when
+the API serves a response (Section 11).
+
+- **API-001:** The overview generator MUST read only its release's validated
+  STAC. It MUST NOT read a curated authoring document or the display document.
 - **API-002:** `/metadata` MUST expose one clean response contract with
   `schema_version = "1.0.0"`. Its response MUST be a deterministic projection of
   the app registry and the application display document. The API
@@ -1418,54 +1405,91 @@ registry**, generated deterministically from validated STAC.
   remain in place, and time-to-band resolution MUST remain an internal API
   implementation detail rather than part of the frontend protocol.
 - **API-004:** For a `TemporalCubeDataset` the time-to-band mapping MUST be
-  expressed as a rule in the app registry, not as an enumerated index file.
+  expressed as a rule in the release overview, not as an index file enumerating
+  a file and band per variable and timestep.
   `lookup.json` MUST NOT be emitted. (A `StaticRasterDataset` has no temporal
   axis and no timestep key; see API-008.)
 
-  The rule stores exactly four values per variable — `origin`, `step`, `count`,
-  and `chunk_size`. Paths are not stored, because ORG-006 and ORG-007 already
-  determine them: an Item ID is `<dataset-id>--<chunk_start_key>--<chunk_end_key>`
-  and a COG is `<item-id>.tif` beneath `cogs/<variable-id>/`.
+  The temporal axis is shared by every variable of a dataset (ORG-004, OBS-001),
+  and aligned Items give every variable the same chunk boundaries (ORG-002), so
+  the axis and its `chunk_size` are recorded once at dataset level. Paths are
+  not stored, because ORG-006 and ORG-007 already determine them: an Item ID is
+  `<dataset-id>--<chunk_start_key>--<chunk_end_key>` and a COG is
+  `<item-id>.tif` beneath `cogs/<variable-id>/`. Paths resolve within the
+  release, which contains exactly one dataset.
+
+  An axis MUST declare its kind explicitly, which determines the fields that
+  follow it:
+
+  | `kind` | Fields | Meaning |
+  | --- | --- | --- |
+  | `regular` | `origin`, `step`, `count` | Every timestep is `origin` plus a whole multiple of one ISO 8601 duration, applied with calendar arithmetic at the dataset's precision. `P1M` and `P1D` are regular even though months and years differ in length. |
+  | `enumerated` | `values` | The complete ordered list of timesteps, for an axis no single step describes: gaps, uneven sampling, or event-based timesteps. `count` equals `len(values)`. |
 
   `key(t)` formats an instant as the canonical ISO timestep at the dataset's
-  declared precision (§5.5). Resolving a requested timestep `t`:
+  declared precision (§5.3). The axis kind affects only the two conversions
+  between a position and a timestep:
 
   ```text
-  index           = (t - origin) / step          # regular axis
-                  = position of t in cube:dimensions.time.values   # enumerated axis
+  timestep(i) = key(origin + step * i)                      # regular
+              = values[i]                                   # enumerated
+
+  index(t)    = whole steps from origin to t, counted in the step's calendar
+                unit; reject a remainder                     # regular
+              = position of t in values; reject if absent     # enumerated
+  ```
+
+  Chunking needs no such split, because chunks are defined in index space:
+
+  ```text
+  index           = index(t)
   reject unless     0 <= index < count
   chunk           = index // chunk_size
   bidx            = index % chunk_size + 1       # 1-based, within the chunk
-  chunk_start_key = key(origin + step * (chunk * chunk_size))
-  chunk_end_key   = key(origin + step * (min((chunk + 1) * chunk_size, count) - 1))
-  file            = <dataset-id>/cogs/<variable-id>/<dataset-id>--<chunk_start_key>--<chunk_end_key>.tif
+  chunk_start_key = timestep(chunk * chunk_size)
+  chunk_end_key   = timestep(min((chunk + 1) * chunk_size, count) - 1)
+  fname(k)        = k with ":" replaced by "-"    # filename form, §5.3
+  file            = cogs/<variable-id>/<dataset-id>--<fname(chunk_start_key)>--<fname(chunk_end_key)>.tif
   ```
 
+  A requested timestep that falls between steps of a regular axis MUST be
+  rejected exactly as an out-of-range index is: `index(t)` counts whole steps, so
+  a remainder means the request names no published timestep. With `origin =
+  "0100"` and `step = P5Y`, `0102` is rejected. This applies to an exact lookup
+  of one timestep; a requested range selects the timesteps it contains.
+
   The rule is well defined because the axis is complete (OBS-004 and the nodata
-  policy in OBS-007), one chunk size applies across a variable with a possibly
+  policy in OBS-007), one chunk size applies across the dataset with a possibly
   short final chunk, and item naming is deterministic (ORG-006). Generation MUST
   verify the rule reproduces the actual STAC Band names and COG band counts; a
   mismatch is a failed build under VAL-008, not an alternative output format.
-  An irregular time axis does not reintroduce an index file: the axis itself is
-  enumerated once per dataset in `cube:dimensions.time.values` (STAC-003) and
-  the file and band remain computed by position within it.
+  An enumerated axis does not reintroduce an index file: it enumerates the axis
+  once per dataset, not a file and band per variable and timestep, and the file
+  and band remain computed by position within it.
+- **API-017:** An enumerated axis's `values` MUST be inlined in the release
+  overview in full, with no size limit, and MUST equal
+  `cube:dimensions.time.values` (STAC-003). Size does not justify an
+  exception: monthly and daily axes are regular, so only genuinely irregular axes
+  are enumerated, and even ten thousand date-precision values are roughly 140 KB
+  read once at startup. `values` SHOULD be serialized in YAML flow style so a
+  long axis reads as a wrapped block rather than thousands of lines.
 - **API-005:** The rule MUST resolve every canonical timestep of every published
   variable to exactly one release-relative COG path and one-based band index,
   and resolutions MUST be unique and ordered across the modeled temporal axis.
 - **API-006:** Service-specific URLs, WMS layer names, TiTiler parameters, and
   storage base paths MUST be derived at runtime or API serialization;
   they MUST NOT be curated scientific metadata.
-- **API-007:** Registry generation SHOULD occur during release build so a release
-  can be validated independently of an API image. Image-build generation MAY
-  be used for development diagnostics but MUST NOT be a production registry
-  source or fallback.
-- **API-008:** A static dataset MUST NOT acquire a temporal raster axis merely to
-  satisfy a client lookup contract. The API MUST identify SRTM as a static
-  raster and provide its Collection asset without a timestep selection key.
-  SKOPE UI MUST render static rasters without constructing a synthetic temporal
-  context. Neither legacy `2000` nor unexplained `2009` keys may act as API,
-  lookup, observation, or publication identifiers; the reviewed acquisition
-  interval remains in STAC discovery metadata.
+- **API-007:** Overview generation MUST occur during the release build, as its
+  final step, so a release can be validated independently of an API image.
+  Generating an overview at image build or API startup MAY be used for
+  development diagnostics but MUST NOT be a production source or fallback.
+- **API-008:** A static dataset MUST NOT acquire a temporal axis in its release
+  merely to satisfy a client contract. The application protocol represents a
+  static dataset with a reserved, non-ISO key, `static`, which is not a
+  timestep and appears in neither STAC, the overview, nor a time-to-band rule.
+  The legacy SRTM `2009` key MUST NOT act as an API, lookup, observation, or
+  publication identifier; the reviewed acquisition interval remains in STAC
+  discovery metadata.
 - **API-009:** The API and SKOPE UI MUST use canonical
   `gdd_maize_may_sept` for the PaleoCAR v3 quantity. The legacy
   `gdd_may_sept` alias MUST NOT be emitted, accepted, stored, or represented as
@@ -1475,23 +1499,36 @@ registry**, generated deterministically from validated STAC.
   coordinated UI release MUST consume those values without the current global
   `COLOR_MAX_PCT` multiplier. Ambiguous legacy `min` and `max` fields MUST NOT
   appear in the v1 response.
-- **API-011:** The app registry MUST be generated from validated STAC alone. It
-  MUST describe the release completely and MUST NOT be edited after generation.
-  Presentation MUST NOT influence it: the display document is applied when
-  serving, never merged into the registry.
-- **API-012:** The app registry MUST record the release ID and declaration
-  digest it was generated from, MUST be verified against them before serving,
-  and MUST refuse to serve on mismatch rather than falling back.
-- **API-013:** A deployment MUST materialize the app registry where the API
-  reads it without a per-request round trip to release storage. Committing the
-  generated registry to the application repository and baking it into the image
-  satisfies this, as does shipping `registry.yml` inside the release and
-  fetching it once at startup.
+- **API-011:** A release overview MUST be generated from that release's
+  validated STAC alone. It MUST describe the release completely and MUST NOT be
+  edited after generation; a rebuild MUST regenerate it and byte-compare it
+  against the published copy. It MUST declare in its own header that it is
+  derived and that STAC is its authority, so a reader cannot mistake it for an
+  authored document. Presentation MUST NOT influence it: the display document is
+  applied when serving, never merged in.
+- **API-012:** Each release overview MUST record the release ID and declaration
+  digest it was generated from. Before serving, a deployment MUST verify each
+  pinned release's manifest digest against its pin, the overview's checksum
+  against its manifest inventory entry, and the overview's recorded release ID
+  and declaration digest against the pin. It MUST refuse to serve on any
+  mismatch rather than falling back or serving the remaining datasets.
+- **API-013:** A deployment MUST materialize its app registry where the API
+  reads it without a per-request round trip to release storage, by reading each
+  pinned release's `overview.yml` once at startup.
+- **API-015:** The app registry MUST be the composition of the overviews of the
+  releases pinned by REL-012, and composition MUST be mechanical: selecting
+  overviews and concatenating them, never editing, merging, or reinterpreting
+  their contents. A deployment MUST refuse to start if two pinned releases
+  declare the same dataset identifier. Any consistency check that spans datasets
+  belongs here, because a release build sees one dataset and cannot perform
+  one.
 - **API-014:** The allowlist in the app registry MUST cover every dataset and
-  variable in the release. The display document MUST NOT narrow it: choosing not
-  to display a variable is a presentation decision, and the release's data
+  variable of every pinned release. The display document MUST NOT narrow it:
+  choosing not to display a variable is a presentation decision, and the data
   remains reachable through any STAC client, so display selection MUST NOT be
-  treated as an access boundary.
+  treated as an access boundary. Serving fewer datasets is expressed by pinning
+  fewer releases, which is a deployment decision under REL-012 and not a
+  presentation one.
 
 SKOPE UI is the only supported API consumer. The API and UI therefore perform
 one breaking, coordinated protocol cutover with no compatibility period. The
@@ -1501,34 +1538,184 @@ side fails its schema-version handshake or functional health checks. A stale or
 cached UI encountering a mismatched major version MUST show an unavailable or
 update-required state rather than interpreting unknown metadata.
 
-The current API depends on dataset-level CRS/transform for request-size checks,
-dataset-level temporal bounds for default extraction, and lookup entries for
-tiles and extraction. For temporal profiles, the new projection provides the
-corresponding unambiguous fields only when all selected assets share the
-required grid and temporal contract. Static behavior follows API-008. The API
-may read STAC directly or cache a normalized registry without exposing that
-choice to SKOPE UI.
-
-The one potential later deprecation is the committed app registry, if a
-deployment ever prefers to read `registry.yml` from the release at startup
-instead.
 Legacy `wmsLayer`, `timeseriesServiceUri`, aliases, synthetic temporal keys, and
 ambiguous rendering ranges are removed in the coordinated v1 cutover.
+
+### 16.2 Release overview format
+
+- **API-016:** A release overview MUST be serialized as YAML at
+  `<release-id>/overview.yml`, MUST obey the determinism rules in REL-004, and
+  MUST be listed in the manifest inventory with the `derived` role. Its
+  `schema_version` versions the overview format only, independently of the
+  release manifest's and `/metadata`'s.
+
+YAML is chosen over TOML and JSON for this one file because its purpose is to be
+read. Its content is nested — a variable inventory, per-variable fields, extents,
+and the temporal rule — and nested structure stays flat to the eye in YAML while
+TOML expresses it through arrays of tables. YAML also matches `curated.yml` and
+the display document, so every file a person is expected to read in this system
+is the same format, while every machine-authoritative file — STAC and the
+manifest — stays JSON. Parsing cost is not a deciding factor: the file is read
+once at startup or by a person, and both formats parse everywhere SKOPE runs.
+
+For a regular axis the overview stays small, because the time-to-band rule
+replaces the enumerated axis: a handful of axis values, including `chunk_size`,
+for the whole dataset rather than one entry per timestep. A twelve-variable
+dataset with a 1,898-step annual axis is on the order of a hundred readable
+lines. An enumerated axis adds its `values` list (API-017).
+
+- **API-018:** A release overview MUST carry everything `/metadata` serves, so
+  that the application needs no other release input. That is: release identity;
+  dataset identity, title, description, version, profile, license, region name,
+  spatial extent, grid, and temporal axis and semantics; provenance, citation,
+  lineage, uncertainty, and links; and per variable its title, description,
+  unit, category, categorical value meanings, and encoding: `data_type`,
+  `nodata`, `scale`, and `offset`. The temporal axis includes the dataset's
+  `chunk_size`. It MUST NOT carry a presentation choice
+  (API-011).
+
+Grid resolution is not a field. It is computed from `grid.transform` when
+serializing or displaying, because the curated free text it replaces is
+unreliable — the legacy `srtm` entry reads `250m` under the title `SRTM 90m
+Digital Elevation Model V4.1`.
+
+`scale` and `offset` are carried per variable even where both are identity
+today. Physical values are `stored × scale + offset` (Section 3); with scale 1
+and offset 0, as in every current dataset, they equal the stored values. When
+either differs, the API MUST pass TiTiler's `unscale` option for tiles and apply
+scale and offset during extraction, so that rescale endpoints (STYLE-009) and
+extracted values are both in physical value space.
+
+The example below uses PaleoCAR v3's real grid — EPSG:4269 at 0.008333°, origin
+(-114.995833, 42.995833), 1440 by 1560 — with the source-preserving `UInt32`
+encoding (COG-016) rather than the `UInt16` the current COGs carry. Fixtures
+will be built from this example, so its grid, extent, and axis agree with each
+other: the bbox is the outer edge of the grid. Whether the source rasters are
+registered to pixel corners or centres (GDAL `AREA_OR_POINT`) still needs
+checking against the source. Values that await scientific review are marked as
+examples in place: the calendar and timestep semantics come from the creator's
+answers recorded in `curated.yml` (Section 21.2), not from this document.
+
+```yaml
+# Generated from validated STAC. Do not edit.
+# Authority: collection.json and items/. Regenerated and byte-compared on build.
+schema_version: "1.0.0"
+release_id: paleocar_v3-r-2026.09.12
+declaration_digest: a8c92e7d4b131029ea9fd04cd7d8ba3131d058cdaf5127add24dc68c175dc13f
+dataset:
+  id: paleocar_v3
+  version: "3"
+  title: "PaleoCAR: SW USA Paleoclimate Reconstruction (V3)"
+  description: >-
+    Reviewed CommonMark summary of the reconstruction, its inputs, and its
+    intended use.
+  profile: TemporalCubeDataset
+  license: CC-BY-4.0
+  region_name: "Southwestern USA"
+  extent:
+    bbox: [-114.995833, 30.995833, -101.995833, 42.995833]
+  grid:
+    code: EPSG:4269
+    shape: [1440, 1560]
+    transform: [0.008333333332949996, 0.0, -114.995833333457,
+                0.0, -0.008333333333010806, 42.9958333336016]
+  time:
+    kind: regular
+    origin: "0103"
+    step: P1Y
+    count: 1898
+    chunk_size: 100
+    precision: year
+    calendar: proleptic_gregorian    # example value; see Section 21.2
+  providers:
+    - name: Example Organization
+      roles: [producer, licensor]
+      url: https://example.invalid/
+  citation: "Author, A. (2021). PaleoCAR v3. Journal, 1(1)."
+  doi: 10.5555/example
+  lineage: >-
+    Curated processing summary carried from the reviewed method description.
+  uncertainty:
+    summary: "Curated summary supported by the dataset documentation."
+    methodology_href: null
+  links:
+    - rel: via
+      href: https://www.ncdc.noaa.gov/paleo/study/19783
+    - rel: about
+      href: https://www.openskope.org/contact
+variables:
+  ppt_annual:
+    title: Annual precipitation
+    description: "Calendar-year total precipitation."
+    unit: mm
+    category: precipitation
+    data_type: uint32
+    nodata: 4294967295
+    scale: 1
+    offset: 0
+```
+
+A `StaticRasterDataset` has no Items, so ORG-006 and ORG-007 derive no path.
+Its overview omits `time` and names the Collection asset directly. Unlike the
+PaleoCAR example above, the grid values here are illustrative only: SRTM's real
+output grid is not yet known, because MIG-006 requires regenerating it from
+official CGIAR-CSI source tiles rather than the legacy COG. They are internally
+consistent with the bounding box shown and MUST NOT be used as a fixture.
+
+```yaml
+# Generated from validated STAC. Do not edit.
+# Authority: collection.json. Regenerated and byte-compared on build.
+schema_version: "1.0.0"
+release_id: srtm-r-2026.09.12
+declaration_digest: 5f2b1c0e9a7d4836bb105ce4f0d9a2318cd7e6b4915a0df23cc81746be09d5a2
+dataset:
+  id: srtm
+  version: "4.1"
+  title: "SRTM 90m Digital Elevation Model V4.1"
+  profile: StaticRasterDataset
+  license: CC-BY-4.0
+  region_name: "Continental USA"
+  extent:
+    bbox: [-124.5, 24.0, -67.0, 49.0]
+  grid:
+    code: EPSG:4326
+    shape: [30000, 69000]
+    transform: [0.000833333333, 0.0, -124.5, 0.0, -0.000833333333, 49.0]
+variables:
+  srtm_elevation:
+    title: Elevation
+    unit: m
+    data_type: int16
+    nodata: -32768
+    scale: 1
+    offset: 0
+    asset_href: cogs/srtm_elevation.tif
+    band_name: srtm_elevation
+```
+
+Two consequences for the coordinated cutover. The curated `title` keeps its
+`(V3)` suffix even though `version` is a separate field, because `paleocar_v2`
+and `paleocar_v3` would otherwise present identical titles in the dataset list;
+a UI that renders `version` alongside the title may drop the suffix, but one of
+the two MUST happen. And the legacy `region.extents` axis order
+(`[[lat, lon], [lat, lon]]`) becomes a WGS 84 `bbox`
+(`[west, south, east, north]`), so every UI consumer of the outline changes with
+the field rename.
 
 ## 17. Validation and conformance
 
 - **VAL-001:** Validation MUST be divided into independently reportable curated
   metadata, source preflight, typed-model, STAC schema, COG structural, COG byte
   and statistics, cross-artifact agreement, release-manifest integrity, and
-  registry compatibility passes.
+  overview generation and verification passes.
 - **VAL-002:** Every finding MUST include a stable requirement ID, severity,
   message, artifact or source path, and dataset/variable/chunk/band context when
   applicable. Validation SHOULD support human text and complete structured JSON.
-- **VAL-003:** Curated validation MUST reject observed fields, malformed
-  citations/providers, duplicate identifiers, unresolved internal references,
-  and unreviewed required ambiguity.
-- **VAL-004:** Source preflight MUST perform the complete root-release preflight
-  in OBS-002 and MUST not create release or scratch output.
+- **VAL-003:** Curated validation MUST reject missing or unknown required fields
+  (META-002), observed fields, malformed citations/providers, duplicate
+  identifiers, and unresolved internal references.
+- **VAL-004:** Source preflight MUST perform the complete preflight in OBS-002
+  and MUST NOT create release or scratch output.
 - **VAL-005:** STAC validation MUST use the pinned schemas offline and MUST verify
   links, Collection/Item membership, relative paths, extension declarations,
   extents, and SKOPE referential integrity.
@@ -1540,7 +1727,7 @@ ambiguous rendering ranges are removed in the coordinated v1 cutover.
   to the band that STAC and the COG bytes actually carry, verify every size and
   checksum, and prove exact variable/chunk membership.
 - **VAL-008:** A release MUST pass every applicable validation pass with no errors
-  before the root manifest can declare `complete`.
+  before the release manifest can declare `complete`.
 
 Portolan's validator separates metadata, structural, schema, data, and live
 checks and provides structured findings. That is a useful validation pattern,
@@ -1550,50 +1737,50 @@ but SKOPE's validator remains independently specified and does not imply
 ## 18. Acceptance tests
 
 The following tests are required before the corresponding implementation phase
-is accepted. Together they cover every normative MUST in this proposal.
+is accepted. Every normative MUST in this proposal is covered by at least one
+test.
 
 | Test ID | Scenario and expected result | Requirements |
 | --- | --- | --- |
-| AT-001 | Validate good and bad curated fixtures; reject every observed field and preserve curated input unchanged. | AUTH-003, META-001, META-003, META-005, META-006, VAL-003 |
-| AT-002 | Migrate fixtures containing every current dataset and variable field; compare reviewed STAC, SKOPE fields, the application display document, and the generated app registry while proving deprecated fields are absent. | META-006, META-007, STYLE-006, API-002 |
-| AT-003 | Validate SKOPE extension examples, named `lon`/`lat` map-view keys and their ranges, variable keys, categorical value meanings, methodology references, schema identity, and version behavior; reject any `skope:` field naming a colormap, colour stops, a visualization range, a legend, or a rendering document. | SKOPE-001 through SKOPE-004, SKOPE-006 through SKOPE-008 |
-| AT-004 | Build one Collection per `lbda_v2`, `paleocar_v2`, `paleocar_v3`, and `srtm`; require exactly one dataset profile and reject duplicate or changed identifiers. | ORG-001, ORG-005, ORG-009, STAC-001 through STAC-004 |
+| AT-001 | Validate good and bad curated fixtures for temporal, static, and categorical datasets; accept every permitted curated field, reject a fixture missing any required field or recording one as unknown, reject every observed and presentation field, and preserve curated input unchanged. | AUTH-003, META-001 through META-003, META-005, META-006, VAL-003 |
+| AT-002 | Migrate fixtures containing every current dataset and variable field; compare reviewed STAC, SKOPE fields, the application display document, and the generated release overview while proving deprecated fields are absent. | META-006, META-007, STYLE-006, API-002 |
+| AT-003 | Validate SKOPE extension examples, the region name, variable keys, categorical value meanings, methodology references, schema identity, and version behavior; prove every published `skope:` field describes the data rather than its display. | SKOPE-001, SKOPE-003 through SKOPE-005, SKOPE-006 through SKOPE-008 |
+| AT-004 | Build one Collection per `lbda_v2`, `paleocar_v2`, `paleocar_v3`, and `srtm`; require exactly one dataset profile, reject duplicate or changed identifiers, and require the Collection to be the release's root STAC object at `collection.json`. | ORG-001, ORG-005, ORG-009, ORG-013, MIG-007, STAC-001 through STAC-004 |
 | AT-005 | Build aligned temporal Items with every variable asset; reject missing, extra, or duplicate assets and unequal chunk boundaries. | ORG-002 through ORG-004, OBS-001, OBS-003, STAC-005 |
-| AT-006 | Validate CalVer release IDs, valid UTC dates, same-day suffix allocation, deterministic Item IDs, filenames, paths, relative links, relocation, and serialization. Rebuild one frozen declaration with identical explicit volatile inputs and pinned toolchains, then demonstrate that changing one declared input changes the declaration digest and requires a new release ID before publication. | ORG-006 through ORG-008, REL-001, REL-003 through REL-006, REL-008, BOOT-007, BOOT-010, OBS-010 |
+| AT-006 | Validate dataset-qualified release IDs, valid UTC dates, per-dataset same-day suffix allocation, deterministic Item IDs, filenames, paths, relative links, relocation of a release on its own, and serialization. Rebuild one frozen declaration with identical explicit volatile inputs and pinned toolchains, then demonstrate that changing one declared input, including the `chunk_size` in the source manifest's `release` block, changes the declaration digest and requires a new release ID before publication. Prove that a repackaging change produces a new release without changing the dataset `version`. | ORG-006 through ORG-008, REL-001, REL-003 through REL-006, REL-008, REL-010, MAN-011, MAN-012, OBS-010 |
 | AT-007 | Validate positive regular steps, exact endpoints, unique monotonic timesteps, counts, every source/output band description, ordered STAC Band names, and full `cube:dimensions.time.values`; reject missing, shuffled, duplicated, and cross-chunk repeated names. | OBS-004 through OBS-006, STAC-011, API-004, API-005 |
+| AT-007a | Resolve the time-to-band rule over a synthetic enumerated-axis fixture with `values: ["0100", "0103", "0104", "0110", "0111"]` and `chunk_size: 2`: `0100` resolves to band 1 of `<ds>--0100--0103.tif`, `0104` to band 1 of `<ds>--0104--0110.tif`, `0110` to band 2 of the same file, and `0111` to band 1 of the short final chunk `<ds>--0111--0111.tif`, while `0105` is rejected as absent from `values`. Check that the concatenated chunk Band names equal `values` and that the rule reproduces the fixture's COG band counts. On a regular fixture with `origin: "0100"` and `step: P5Y`, reject `0102` as a remainder rather than resolving it. Verify `values` is inlined in the overview. | API-004, API-005, API-017, STAC-003, STAC-011, VAL-008 |
 | AT-008 | Reject non-finite statistics, all-nodata bands without policy, nodata collisions, invalid scale/offset, overflow, truncation, and incompatible per-variable encodings. | OBS-007 through OBS-009, COG-013, COG-014 |
 | AT-009 | Validate COG tiling, internal overviews, lossless compression, CRS/geotransform, band encoding, descriptions, and no `.ovr` or `.aux.xml`. | COG-001 through COG-003, COG-005 through COG-008, COG-010, COG-011 |
 | AT-010 | Recompute final per-band statistics from native encoded pixels and compare embedded minimum, maximum, mean, standard deviation, valid percent, and STAC Raster metadata. | COG-004, COG-008, STAC-008, VAL-006 |
 | AT-011 | Benchmark one-timestep tiles and multi-timestep extraction for block sizes and BAND/TILE/PIXEL interleave using the staged representative-data plan; record compatibility and select no default without results. | COG-012, EXP-002, EXP-003 |
 | AT-012 | Verify STAC asset media type, role, Projection fields, Raster fields, multihash checksum, byte size, and rejection of `proj:epsg` and `titiler:*` authority fields. | STAC-006 through STAC-010, OBS-011, COG-009 |
-| AT-013 | Build continuous and categorical display-document fixtures and their palette document; require one range to serve both the tile rescale and the legend; resolve palette names to portable stops without contacting a tile server; fail the build when a variable in the release has no entry; accept entries for variables absent from the release; reject an override for an undeclared category, ambiguous legacy fields, and any style artifact or reference inside a release. | STYLE-002, STYLE-006, STYLE-009 |
+| AT-013 | Build continuous and categorical display-document fixtures and their palette document; require one range to serve both the tile rescale and the legend; resolve palette names to portable stops without contacting a tile server; fail the build when a variable in the release has no entry; accept entries for variables absent from the release; reject an override for an undeclared category and ambiguous legacy fields; require an explicit numeric `order` that clients sort by, a `map_view` with named `lon`/`lat` in WGS 84 ranges, and a `default_variable` present in the release. | STYLE-002, STYLE-006, STYLE-009 through STYLE-012 |
 | AT-014 | Freeze a validated plan before writing, reject writer input from any other state, construct a separate final observation after byte inspection, reject serializer access to planned facts, and reject mutation of either state. | AUTH-001, AUTH-002, OBS-012, OBS-013 |
-| AT-015 | Validate the root manifest schema, required integrity fields, per-dataset identity and source records, forbidden geospatial fields, path rules, checksums, controlled roles, STAC entrypoint integrity, and an exhaustive inventory covering the Catalog, every Collection, Items when applicable, and every COG; reject a per-dataset manifest, a bootstrap descriptor, a style asset, and a lookup file. | MAN-001 through MAN-006, MAN-008, MAN-009, VAL-007 |
-| AT-016 | Scan all outputs and registry inputs to prove `dataset-facts.json` is absent and unread. | MAN-007, API-001 |
-| AT-017 | Generate the time-to-band rule solely from STAC and verify it resolves every canonical timestep to the band that STAC Band names and COG band counts actually carry; exercise internal tile and extraction resolution against first, middle, and last bands without exposing resolution paths in the UI protocol; reject an emitted `lookup.json`; and fail the build when the rule disagrees with the bytes. | API-003 through API-005 |
-| AT-018 | Generate the app registry and `/metadata` from STAC alone, require `schema_version = "1.0.0"`, validate the new API/UI contract including rendering and geometry-size inputs, verify the registry against its recorded release ID and declaration digest and refuse to serve on mismatch, prove the allowlist covers every dataset and variable in the release and is not narrowed by the display document, reject unsupported major versions on both sides, and prove no legacy response mode or route exists. | API-002, API-006, API-007, API-011 through API-014 |
-| AT-019 | Inject failure before and after every local publication stage; no partial release becomes selectable and the prior release remains unchanged. Deploy and roll back through explicit immutable release paths, require the API and TiTiler to mount the same path, and reject missing manifests, mutable pointer sources, and path disagreement. | REL-006, TXN-001 through TXN-003, TXN-008 through TXN-011, VAL-008 |
-| AT-020 | Inject object upload, verification, and manifest-write failures; retry idempotently; reject mismatched existing objects and prefixes without a valid root marker. | TXN-004 through TXN-010, MAN-008 |
-| AT-021 | Preflight all four datasets with one late failure; assert no release or scratch output and actionable context for every failure. | OBS-002, VAL-001, VAL-002, VAL-004 |
-| AT-022 | Validate every STAC object offline, resolve every link after relocating the release, reject any `items.parquet` file, asset, or manifest entry, and detect byte/STAC/lookup/manifest disagreement. | REL-002, REL-007, VAL-005 through VAL-008 |
+| AT-015 | Validate the release manifest schema, required integrity fields, dataset identity and source records, forbidden geospatial fields, path rules, checksums, controlled roles, STAC entrypoint integrity, and an exhaustive inventory covering the Collection, Items when applicable, the overview, and every COG. Prove the layout is closed: a file present in the release but absent from the inventory, and a file carrying a role outside the controlled vocabulary, each fail validation. | MAN-001 through MAN-006, MAN-008, MAN-009, REL-009, VAL-007 |
+| AT-017 | Generate the time-to-band rule solely from STAC and verify it resolves every canonical timestep to the band that STAC Band names and COG band counts actually carry; exercise internal tile and extraction resolution against first, middle, and last bands without exposing resolution paths in the UI protocol; prove the migrated pipeline no longer emits `lookup.json`; and fail the build when the rule disagrees with the bytes. | API-003 through API-005, MIG-005 |
+| AT-018 | Generate each release overview and `/metadata` from STAC alone, prove the overview generator reads no curated or display document, compose the registry only from the pinned release set and never from the published catalog, prove the overview carries every field `/metadata` serves so no other release input is needed, include a `StaticRasterDataset` overview with an asset href and no `time`, require `schema_version = "1.0.0"`, validate the new API/UI contract including rendering and geometry-size inputs, verify every overview against its recorded release ID and declaration digest and refuse to serve on any mismatch, compose a multi-release registry and prove composition does not edit an overview and refuses duplicate dataset identifiers, prove the allowlist covers every dataset and variable of every pinned release and is not narrowed by the display document, reject unsupported major versions on both sides, and prove no legacy response mode or route exists. | REL-012, REL-014, API-001, API-002, API-006, API-007, API-011 through API-018 |
+| AT-019 | Inject failure before and after every local publication stage; no partial release becomes selectable and the prior release remains unchanged. Deploy and roll back through explicit immutable release paths, require the API and TiTiler to mount the same release root, run full verification at promotion and hash checks at startup, and reject missing manifests, mutable pointer sources, manifest-digest mismatches, and path disagreement. | REL-006, TXN-001 through TXN-003, TXN-008 through TXN-011, VAL-008 |
+| AT-020 | Inject object upload, verification, and manifest-write failures; retry idempotently; reject mismatched existing objects and prefixes without a valid release manifest; serve a pinned release directly from its prefix without copying it, applying promotion and startup verification. | TXN-004 through TXN-010, TXN-017, MAN-008 |
+| AT-021 | Preflight four datasets in one invocation where one fails late; assert no release or scratch output for the failing dataset, complete releases for the other three, a failure exit status that lists the failed dataset, and actionable context for every failure. | OBS-002, VAL-001, VAL-002, VAL-004, MIG-004 |
+| AT-022 | Validate every STAC object offline, resolve every internal link after relocating the release on its own, require absolute HTTPS external links and no `self` links, and detect byte/STAC/rule/manifest disagreement. | REL-001, REL-002, VAL-005 through VAL-008 |
 | AT-023 | Validate source manifest identity, URIs, complete checksums, source-band mappings, and per-variable encodings while rejecting descriptive or scientific temporal semantics; calculate and freeze a missing upstream checksum before transformation. | META-004, META-008, OBS-001, OBS-011 |
 | AT-024 | Rehearse all migration phase gates; require retained fixtures and reports, complete new-contract checks, unchanged legacy bytes, whole-release preflight before transformation, and proven replacement paths before legacy removal. | MIG-001 through MIG-006 |
-| AT-025 | Validate the single-COG SRTM fixture: derive spatial extent from its bytes, reject spatial Items and invented dates, require a Collection asset and `srtm_elevation` band name, preserve the reviewed 2000 acquisition interval in STAC, render and query it through the API and UI without a timestep selection, reject legacy `2000` and `2009` lookup keys, and record generation, validation, transfer, tile, and window-read limits. | ORG-010, ORG-011, STAC-004, STAC-012, API-008 |
+| AT-025 | Validate the single-COG SRTM fixture: derive spatial extent from its bytes, reject spatial Items and invented dates, require a Collection asset at `cogs/srtm_elevation.tif` and the `srtm_elevation` band name, preserve the reviewed 2000 acquisition interval in STAC, render and query it through the API and UI with the reserved `static` key, reject the legacy `2009` lookup key, and record generation, validation, transfer, tile, and window-read limits. | ORG-007, MIG-008, MIG-009, STAC-004, STAC-012, API-008 |
 | AT-026 | Run each Phase 0 experiment in an isolated temporary location; verify it cannot write a manifest, publish a release, modify legacy bytes, or become a production dependency. | EXP-001 |
-| AT-027 | Test scaled-integer fixtures whose native and physical ranges differ; reject unlabeled or unconverted reuse among native statistics, physical values, scientific domains, and visualization ranges. | COG-015, META-006, META-007, STYLE-002 |
+| AT-027 | Test scaled-integer fixtures whose native and physical ranges differ; reject unlabeled or unconverted reuse among native statistics, physical values, valid ranges, and visualization ranges. | COG-015, META-006, META-007, STYLE-002 |
 | AT-028 | Generate the temporal benchmark matrix from representative variables only; compare cold and warm tiles, slider sequences, polygon extractions, concurrency, range traffic, resources, output size, build time, and object count; verify identical scientific results and document selection against the declared decision rule. | EXP-002, EXP-003 |
 | AT-029 | Resolve the official CGIAR-CSI Version 4.1 available-tile index for the reviewed SRTM footprint, distinguish published tiles from expected absent ocean cells, stream and freeze every published-tile checksum, assemble the candidate raster with reviewed deterministic nodata for absent cells, and compare its grid, coverage, nodata, and pixels with the legacy copy. Reject a missing indexed tile and any unreviewed substitution with NASA SRTM or another product/version. | META-004, OBS-002, OBS-011, MIG-004, MIG-006 |
-| AT-030 | Build PaleoCAR v3 fixtures with exactly the twelve canonical variables, validate every source-folder-to-variable mapping, reject the four-variable and raw S3-spelling inventories, require `gdd_maize_may_sept` throughout API and UI state, and reject the legacy `gdd_may_sept` alias at every protocol boundary. | ORG-012, API-003, API-009 |
-| AT-031 | Select paired PaleoCAR v3 estimate and uncertainty source roles entirely through curated policy and resolved source mappings; switch a fixture from the scaled pair to the unscaled pair without code or schema changes; require a new release identity and checksums, retain the earlier release unchanged, reject mixed or undocumented pairings, and require an explicit dataset-version review when semantics change. | META-009, REL-006 |
-| AT-032 | Build source-preserving `UInt32` and candidate `UInt16` COGs for representative PaleoCAR v3 estimate and uncertainty variables; scan every valid source value before conversion; reject overflow, truncation, nodata collision, or any pixel/API result difference; and report compressed size, range traffic, memory, tile and extraction latency, and build time before approving a per-variable override. | COG-013, COG-014, COG-016, EXP-004 |
+| AT-030 | Build PaleoCAR v3 fixtures with exactly the twelve canonical variables, validate every source-folder-to-variable mapping, reject the four-variable and raw S3-spelling inventories, require `gdd_maize_may_sept` throughout API and UI state, and reject the legacy `gdd_may_sept` alias at every protocol boundary. | MIG-010, API-003, API-009 |
+| AT-031 | If uncertainty products are published (Section 21), select paired estimate and uncertainty source roles entirely through curated policy and resolved source mappings; switch a fixture from the scaled pair to the unscaled pair without code or schema changes; require a new release identity and checksums, retain the earlier release unchanged, reject mixed or undocumented pairings, and require an explicit dataset-version review when semantics change. | META-009, REL-006 |
+| AT-032 | Build source-preserving `UInt32` and candidate `UInt16` COGs for representative PaleoCAR v3 estimate and uncertainty variables; scan every valid source value before conversion; reject overflow, truncation, nodata collision, or any pixel/API result difference; and report compressed size, range traffic, memory, tile and extraction latency, and build time before approving a per-variable override. | COG-013, COG-014, COG-016, MIG-011, EXP-004 |
 | AT-033 | Publish a proposal schema fixture through the production-like nginx static path; verify the canonical `v0.1.0` URL and `$id`, unauthenticated GET/HEAD, media type, CORS, immutable caching, disabled directory listing, repository-to-served checksum equality, availability with FastAPI stopped, survival across rollback, and rejection of a different-byte overwrite. | SKOPE-006, SKOPE-007, SKOPE-009, SKOPE-010 |
 | AT-034 | Compile reviewed person and organization fixtures from curated records in `curated.yml`; validate canonical ORCID/ROR URIs, preserve selected identifiers in STAC, reject conflicting names and implicit project-to-dataset role inheritance, publish only the reviewed organizational contact URL, and verify the release has no runtime dependency on project metadata or unreviewed legacy personal details. | META-010, META-011 |
 | AT-035 | For positive, nonzero-minimum, and negative-minimum variables, carry an exact reviewed physical visualization range from the application display document through `/metadata` into SKOPE UI tile parameters and legend endpoints; require one range to serve both; reject legacy `min`/`max`, range auto-classification, percentage multipliers, hidden clipping, encoded-space reuse, and any tile/legend disagreement. Verify time-series values and summary statistics are unchanged by style selection. | META-012, STYLE-002, STYLE-009, API-002, API-010 |
-| AT-036 | Compile four dataset `curated.yml` fixtures and the selected dataset composition into a frozen plan; validate RFC 8785 declaration-graph serialization, identity profile, full SHA-256 digest and its exclusions, deterministic bytes, agreement between the root manifest's release and declaration fields and the resolved declaration, and publication order. Reject parallel release plans, any published bootstrap descriptor, generated-output digest inputs, reuse of a release ID for a different digest, and conflation of the assigned release ID with the computed declaration digest. | BOOT-007, BOOT-010, MAN-003, MAN-006, MAN-009, TXN-001, TXN-004 |
-| AT-037 | Execute the same fixture through a direct runner and a durable-workflow test harness; require identical release identity and outputs, a compact digest-verified request, stable request identity across retry and continuation, side effects only through idempotent operations, dataset completion before the root marker, and a provider-neutral completion record. Reject large workflow payloads, run-ID-derived paths, hidden output-affecting request parameters, event-history copies in the release, and any orchestration reference that acts as a commit marker. | MAN-010, ORCH-001 through ORCH-008, TXN-001 through TXN-016 |
+| AT-036 | Compile each dataset `curated.yml` fixture into a frozen plan; validate RFC 8785 declaration-graph serialization, identity profile, full SHA-256 digest and its exclusions, deterministic bytes, agreement between the manifest's release and declaration fields and the resolved declaration, and publication order. Reject generated-output digest inputs, reuse of a release ID for a different digest, and conflation of the assigned release ID with the computed declaration digest. Run a batch invocation of four datasets in which one fails, and prove the other three publish as complete, independently valid releases and that the batch itself has no identifier, digest, manifest, or rollback. Prove each release contains exactly one dataset and that a build writes nothing outside its own staging and release paths, including the published catalog. | REL-011, REL-013, MAN-003, MAN-006, MAN-009, MAN-011, MAN-012, ORCH-009, TXN-001, TXN-004 |
+| AT-037 | Execute the same fixture through a direct runner and a durable-workflow test harness; require identical release identity and outputs, a compact digest-verified request, stable request identity across retry and continuation, side effects only through idempotent operations, each release's manifest written last, and a provider-neutral completion record. Reject large workflow payloads, run-ID-derived paths, hidden output-affecting request parameters, event-history copies in the release, and any orchestration reference that acts as a commit marker. | MAN-010, ORCH-001 through ORCH-008, TXN-001 through TXN-016 |
 | AT-038 | Create failed local, completed-object, and incomplete-multipart fixtures; generate repeatable cleanup reports and digests without mutation; require separately recorded authorization bound to exact scope and a 24-hour grace period; then execute and retry cleanup idempotently with complete provenance. Reject execution after any object, manifest, lease, workflow, selection, report, or scope change; reject generic confirmation or force flags; and prove that no valid published release or unauthorized object can be deleted. | TXN-008, TXN-009, TXN-012 through TXN-016 |
 | AT-039 | Deploy the new API and SKOPE UI as one staged protocol pair, exercise metadata, static and temporal maps, legends, time series, extraction, and summary statistics, then promote and roll back both together. Present an update-required state for a stale UI fixture, and prove that no legacy metadata mode, alias, synthetic SRTM key, rendering field, or independently deployable compatibility path remains. | API-002, API-003, API-008 through API-010, MIG-002 |
-| AT-040 | Validate a PaleoCAR v3 creator-review fixture covering all twelve variables and all questions in Section 21.2; require attribution, evidence references, units, temporal semantics, nodata, precision, estimate selection, and compatible uncertainty pairing. Reject omissions, unexplained `unknown` values for published products, mixed value spaces, unsupported uncertainty labels, incomplete variable coverage, and conclusions that disagree with curated metadata. Verify that changing an approved conclusion changes the release declaration and cannot mutate the prior release. | META-009, META-013, REL-006 |
 
 ## 19. Migration plan
 
@@ -1604,11 +1791,11 @@ documentation before the next phase depends on it.
 0. **Decision-support experiments.** Build disposable fixtures, one-off
    prototypes, and benchmarks needed to decide temporal chunking and validate
    SRTM single-COG viability, interleave, compression, block size, and tool
-   compatibility. Experimental outputs are not releases and are never
-   selectable by a registry.
+   compatibility. Experimental outputs are not releases and are never pinned by
+   a release set.
 
 - **EXP-001:** Phase 0 work MUST run outside production pipeline and publication
-  paths, MUST use read-only source data, MUST NOT write dataset or root release
+  paths, MUST use read-only source data, MUST NOT write release
   manifests, MUST NOT modify legacy artifacts, and MUST NOT become a production
   dependency without approval through the applicable implementation phase.
 - **EXP-002:** The temporal chunk experiment MUST initially generate full-grid,
@@ -1646,8 +1833,8 @@ removed after their measurements and toolchain identity are recorded.
 
 1. **Schemas and typed curated metadata.** Define versioned schemas for
    `curated.yml`, the source manifest, the SKOPE extension, the application
-   display document, and the root manifest. Create reviewed fixtures for all
-   four datasets.
+   display document, the release manifest, and the release overview. Create
+   reviewed fixtures for all four datasets.
 2. **Typed observations and strengthened preflight.** Introduce the conceptual
    plan/final-observation lifecycle and preserve `titiler`'s temporal and
    whole-migration preflight. Add grid tolerance, full band-description,
@@ -1656,27 +1843,38 @@ removed after their measurements and toolchain identity are recorded.
    apply per-variable encodings, embed statistics and overviews, reopen bytes,
    and run benchmark experiments.
 4. **Dataset-level STAC.** Emit one Collection per dataset with aligned Items,
-   pinned extensions, and SKOPE metadata.
+   pinned extensions, and SKOPE metadata. The current pipeline emits Projection
+   1.1 `proj:epsg` through rio-stac 0.12, and its metadata and STAC builders
+   read that field directly; both move to Projection 2.0 `proj:code`.
 5. **Derived time-to-band rule.** Generate the rule only from finalized STAC,
    verify it against actual Band names and COG band counts, and prove correct
    internal tile and extraction resolution.
-6. **Dataset manifests.** Inventory and checksum each validated dataset release.
-7. **Root manifest and publication protocol.** Implement local atomic rename and
-   object-storage commit-marker semantics with failure injection. Define the provider-neutral
+6. **Release manifest and publication protocol.** Inventory and checksum each
+   validated release. Implement local atomic rename and object-storage
+   commit-marker semantics with failure injection. Define the provider-neutral
    request and completion records and prove the same protocol through a direct
-   runner; Temporal integration remains optional orchestration work rather than
-   a release-format dependency. Add idempotent cleanup reporting, separately
+   runner, including a multi-dataset batch invocation with one failing dataset;
+   Temporal integration remains optional orchestration work rather than a
+   release-format dependency. Add idempotent cleanup reporting, separately
    authorized destructive execution, and durable cleanup provenance.
-8. **Registry generation and coordinated protocol cutover.** Generate
-   environment-selected metadata from STAC, implement the single
-   `schema_version = "1.0.0"` `/metadata` contract, update SKOPE UI, remove legacy
-   fields and aliases, and verify the paired deployment and rollback across
-   metadata, maps, extraction, and analysis.
+7. **Release set and published catalog.** Implement the version-controlled
+   release-set pin, the version-controlled public listing record, and generation
+   of the published catalog from it. Replace the single corpus-wide release root
+   (the `check-dataset-release` Make target and its `skope-r-*` directories) and
+   its one-directory `/data` mount with pin-driven selection (TXN-011).
+8. **Overview generation and coordinated protocol cutover.** Generate each
+   release overview from STAC, compose the app registry from the pinned set,
+   implement the single `schema_version = "1.0.0"` `/metadata` contract, update
+   SKOPE UI, remove legacy fields and aliases, and verify the paired deployment
+   and rollback across metadata, maps, extraction, and analysis.
 9. **Migration of four datasets.** Migrate and validate `lbda_v2`, `paleocar_v2`,
    `paleocar_v3`, and `srtm`; do not include PRISM without a separate decision.
-10. **Legacy removal.** Remove metadata mutation paths and `dataset-facts.json`,
-    then remove checked-in legacy registry duplication after the new protocol
-    passes its coordinated acceptance suite.
+   The four are expected to migrate together, but each produces its own release,
+   so one dataset failing preflight or validation MUST NOT block publication of
+   the others (MIG-004).
+10. **Legacy removal.** Remove metadata mutation paths and the emitted
+    `lookup.json`, then remove checked-in legacy registry duplication after the
+    new protocol passes its coordinated acceptance suite.
 
 - **MIG-001:** Every phase MUST retain passing fixtures from earlier phases and
   MUST produce an independently reviewable validation report.
@@ -1687,10 +1885,15 @@ removed after their measurements and toolchain identity are recorded.
   `timeseries/metadata.yml` or deploying the breaking production cutover.
 - **MIG-003:** Existing published releases MUST remain byte-for-byte unchanged;
   migration MUST publish new release identifiers.
-- **MIG-004:** The four datasets MUST complete a single whole-release source
-  preflight before any transformation starts.
-- **MIG-005:** Legacy mutation paths and `dataset-facts.json` MUST be removed only
-  after the STAC-derived registry and integrity manifests pass acceptance tests.
+- **MIG-004:** When one invocation requests several datasets, every requested
+  dataset MUST complete source preflight before any transformation starts. A
+  dataset that fails preflight MUST be reported and skipped, and the datasets
+  that pass MUST proceed to build and publication. The invocation MUST exit with
+  a failure status that lists every failed dataset. Preflight scope is the
+  invocation; publication scope remains one release per dataset (ORCH-009).
+- **MIG-005:** Legacy metadata mutation paths and the emitted `lookup.json` MUST
+  be removed only after the STAC-derived overview and integrity manifest pass
+  acceptance tests.
 - **MIG-006:** SRTM migration MUST regenerate the candidate COG from a complete,
   checksummed inventory of every official CGIAR-CSI SRTM Version 4.1 GeoTIFF
   source tile listed as available within the reviewed footprint, obtained
@@ -1704,6 +1907,79 @@ removed after their measurements and toolchain identity are recorded.
   and pixel differences. NASA SRTM, NASADEM, or another CGIAR version MUST NOT
   be substituted without a reviewed scientific dataset-version and identifier
   decision.
+
+### 19.1 Initial dataset decisions
+
+These decisions apply the generic requirements to the four v1 datasets. They are
+migration requirements, not part of the release format; a later dataset records
+its equivalents in its own `curated.yml` and source manifest.
+
+- **MIG-007:** `lbda_v2`, `paleocar_v2`, and `paleocar_v3` MUST use
+  `TemporalCubeDataset`, subject to science review of their temporal semantics,
+  and `srtm` MUST use `StaticRasterDataset`. Their Collection identifiers MUST
+  remain `lbda_v2`, `paleocar_v2`, `paleocar_v3`, and `srtm` unless a reviewed
+  migration decision changes an identifier.
+
+SRTM is a static elevation dataset in the proposed scientific model, although
+the legacy API exposes one lookup timestep.
+
+- **MIG-008:** The v1 SRTM release MUST contain one optimized COG as a
+  Collection asset and MUST NOT contain spatial Items. Phase 0 MUST confirm that
+  the COG can be generated, validated, transferred, tiled, and window-read
+  within documented operational limits before SRTM migration begins. Failure to
+  meet those limits MUST block SRTM migration and trigger review of a future
+  spatial-tiling profile; it MUST NOT cause an unreviewed layout change within
+  v1.
+
+This is the simplest model compatible with the current single-source API path.
+Spatial tiling remains a future fallback because it would require mosaic or
+spatial routing behavior in addition to a different STAC layout.
+
+- **MIG-009:** The SRTM Collection temporal extent MUST represent the reviewed
+  primary radar-acquisition interval during the February 11-22, 2000 mission,
+  as documented by
+  [NASA Earthdata](https://www.earthdata.nasa.gov/centers/lp-daac). Exact RFC
+  3339 bounds MUST be taken from authoritative source metadata rather than
+  constructed from an unexplained legacy year. The Collection MUST record
+  CGIAR-CSI Version 4.1 publication and void-filling as version, citation,
+  processing, and provenance facts rather than observation time. Provenance
+  MUST disclose the CGIAR product's documented use of interpolation and
+  ancillary elevation sources for filled pixels, as described by the
+  [CGIAR product documentation](https://bigdata.cgiar.org/srtm-90m-digital-elevation-database/).
+  The static COG band name MUST be `srtm_elevation`.
+
+The September 2026 review of the
+[public SKOPE source-object listing](https://skope.s3.us-west-2.amazonaws.com/?list-type=2)
+found twelve PaleoCAR v3 quantity directories. The inventory decision treats
+directory names as source mappings, not automatically as public identifiers.
+
+- **MIG-010:** The v1 `paleocar_v3` Collection MUST contain these twelve
+  canonical quantities, plus any uncertainty variables added under Section 21:
+
+  - `gdd_cotton_annual`
+  - `gdd_cotton_may_sept`
+  - `gdd_cotton_water_year`
+  - `gdd_maize_annual`
+  - `gdd_maize_may_sept`
+  - `gdd_maize_water_year`
+  - `gdd_wheat_annual`
+  - `gdd_wheat_may_sept`
+  - `gdd_wheat_water_year`
+  - `ppt_annual`
+  - `ppt_may_sept`
+  - `ppt_water_year`
+
+The source manifest maps S3 spellings such as `maysept` and `wateryear` to the
+canonical `may_sept` and `water_year` forms. Each directory holds
+`prediction`, `prediction_scaled`, `pi_deviation`, and `pi_deviation_scaled`
+products. Each quantity's estimate is `prediction_scaled`; `prediction` is an
+intermediate product. Whether the `pi_deviation` products are also published
+remains open in Section 21.
+
+- **MIG-011:** The PaleoCAR v3 reference build MUST apply COG-016 to each
+  selected source product. Current source inspection establishes `UInt32` as the
+  provisional output datatype; a `UInt16` override MAY be approved only per
+  variable after EXP-004.
 
 ## 20. Alternatives considered
 
@@ -1721,6 +1997,7 @@ removed after their measurements and toolchain identity are recorded.
 | --- | --- | --- |
 | One Collection per variable | Matches current implementation and permits unequal axes | Fragments a logical dataset and weakens aligned-variable validation. Rejected for initial four datasets. |
 | One Collection per dataset | Preserves dataset identity and models variable assets together | Requires aligned chunk boundaries and complete Items. Chosen, subject to dataset evidence. |
+| A per-dataset Catalog with one Collection per variable | Would let a release root mirror the dataset directory and permit unequal axes | A Catalog has no `license`, `providers`, `extent`, `keywords`, `summaries`, `assets`, or `item_assets`, so every dataset-level curated field would be stranded or duplicated onto each variable Collection. Rejected under ORG-013; a Collection is a valid Catalog with seven more fields. |
 
 ### 20.3 Raster packaging
 
@@ -1730,13 +2007,13 @@ removed after their measurements and toolchain identity are recorded.
 | Multi-band temporal chunks | Fewer objects and efficient sequential extraction | Band lookup and interleave matter; partial-band tile reads require benchmarking. Preferred pending chunk experiment. |
 | Zarr or GeoZarr | Natural multidimensional model and chunking | Current TiTiler/API and Portolan raster profile center on COG; broader compatibility work required. Deferred. |
 
-### 20.4 Registry generation timing
+### 20.4 Overview generation timing
 
 | Alternative | Advantages | Costs and conclusion |
 | --- | --- | --- |
 | Image-build time | Matches PR 48 and produces a fixed image | Requires release facts during image build and couples data validation to deployment. Rejected for production after the breaking cutover. |
 | API startup | Always reflects mounted data | Adds startup I/O and makes failures operational rather than release-time. Rejected as primary path. |
-| Release-build time | Release is independently testable and registry projection is checksummed | Environment selections may require additional projections. Recommended. |
+| Release-build time | Release is independently testable, the overview is checksummed in the manifest, and it travels with the data it describes | The deployment must compose the pinned releases' overviews rather than read one prepared file. Selected under API-007. |
 
 ### 20.5 Curated authoring
 
@@ -1775,21 +2052,30 @@ removed after their measurements and toolchain identity are recorded.
 | Alternative | Advantages | Costs and conclusion |
 | --- | --- | --- |
 | Treat legacy `min`/`max` as observed extrema | Requires no scientific review before generating statistics | The values have no provenance, differ from byte-derived statistics, and repeat implausibly across unlike variables. Rejected. |
-| Treat legacy `min`/`max` as scientific domains | Preserves simple variable bounds | Several values appear chosen for display or scaled products and cannot establish scientific validity. Rejected without per-variable evidence. |
+| Treat legacy `min`/`max` as valid ranges | Preserves simple variable bounds | Several values appear chosen for display or scaled products and cannot establish scientific validity. Rejected without per-variable evidence. |
 | Preserve the UI's global percentage cap | Reproduces current visual contrast | A fixed fraction of an absolute maximum is neither a percentile nor a valid range calculation, behaves incorrectly for nonzero or negative minima, and conceals presentation policy in client code. Rejected. |
-| Use exact reviewed style ranges | Makes tile rescaling and legends deterministic, supports per-variable outlier choices, and cleanly separates presentation from statistics and scientific validity | Requires coordinated API/UI migration and per-variable review. Selected. Existing `min`/`max` values remain evidence only; COG/STAC statistics are generated from bytes, scientific domains remain curated, and the selected style owns exact physical rendering endpoints. |
+| Use exact reviewed style ranges | Makes tile rescaling and legends deterministic, supports per-variable outlier choices, and cleanly separates presentation from statistics and scientific validity | Requires coordinated API/UI migration and per-variable review. Selected. Existing `min`/`max` values remain evidence only; COG/STAC statistics are generated from bytes, valid ranges remain curated, and the selected style owns exact physical rendering endpoints. |
 
-### 20.10 Release bootstrap hierarchy
+### 20.10 Release granularity and public discovery
 
 | Alternative | Advantages | Costs and conclusion |
 | --- | --- | --- |
-| Root plus one descriptor per dataset | Supports aggregate and standalone discovery with concise metadata summaries and indexes | Adds five resolved, checksummed files and a filesystem-profile validator, all restating STAC while barred from acting as an authority. Rejected. |
-| Root descriptor only | One entrypoint for the complete publication | Still a second published identity document beside `catalog.json` and the root manifest. Rejected. |
-| No published descriptor | `catalog.json` is the entrypoint, the Collection carries curated and `skope:` metadata, and the root manifest carries release identity and composition | Standalone copying of a single dataset directory is no longer self-describing, which is acceptable because releases are published whole and never referenced across releases. Selected. |
+| One release containing every dataset SKOPE exposes | One identity, one manifest, and one atomic publication for the whole corpus | One dataset changing forces republishing every unchanged dataset, one dataset failing validation blocks all publication, and a dataset directory is not independently usable. Rejected. |
+| One release per dataset, plus an aggregate release composed of them | Preserves a single corpus-level identity while letting datasets version independently | The aggregate publishes no bytes of its own, so it creates a second identity over content that already has an immutable one, plus a second manifest, digest, and publication protocol to keep in agreement. Rejected. |
+| One release per dataset, with a release set for serving and a published catalog for discovery | Each dataset versions, publishes, fails, and relocates independently; the two aggregate needs are met by artifacts honest about being mutable deployment state and a mutable index | Serving several datasets requires an explicit pin, and the public index needs its own publication step outside the release. Selected under REL-011 through REL-014. |
 
-Standalone dataset relocation was the strongest argument for per-dataset
-descriptors. It is not a requirement SKOPE has: a release is built and published
-as one package containing every dataset exposed at that time.
+An aggregate release is attractive because two real needs look like it: a
+deployment must serve several datasets together, and a researcher wants one
+entrypoint. Neither needs immutable bytes. The first is deployment state, and
+naming it a release would make a rollback of one dataset a new corpus identity.
+The second is an index, and a STAC Catalog is already specified to be one; its
+entries name each release ID and declaration digest, so a mutable index still
+resolves only to immutable, verifiable content.
+
+The cost accepted in exchange is that nothing carries a single identity for "all
+SKOPE data at time T". If a citable corpus-level identity is later required, it
+should be minted against the published catalog rather than by reintroducing an
+aggregate release.
 
 ### 20.11 Durable orchestration
 
@@ -1811,20 +2097,20 @@ candidates for durable workflow orchestration. This evaluation is deferred
 beyond v1 and does not alter the release format or require replacing the current
 Redis-backed extraction lifecycle.
 
-### 20.12 Root release identifiers
+### 20.12 Release identifiers
 
 | Alternative | Advantages | Costs and conclusion |
 | --- | --- | --- |
 | Full or shortened declaration digest | Deterministic and naturally content-addressed | Less memorable, conflates the public release label with declaration integrity, and requires an encoding and prefix-length convention. Rejected as the public ID; the full digest remains required separately. |
 | UUID or ULID | Familiar generators and low collision risk; ULIDs are time-sortable | Random forms are not reproducible, deterministic UUIDs add namespace rules, and neither communicates the release date clearly. Rejected. |
 | Semantic version | Familiar release notation | Compatibility semantics do not map cleanly to curated scientific-data publications. Rejected. |
-| SKOPE-prefixed CalVer plus a separate declaration digest | Concise, readable, sortable by approval date, and easy to discuss while retaining cryptographic reproducibility independently | Requires explicit assignment and a same-day sequence rule. Selected as `skope-r-YYYY.MM.DD[-N]` under REL-005 and BOOT-010. |
+| Dataset-qualified CalVer plus a separate declaration digest | Concise, readable, sortable by approval date, unique without contextual qualification, and easy to discuss while retaining cryptographic reproducibility independently | Requires explicit assignment and a per-dataset same-day sequence rule. Selected as `<dataset-id>-r-YYYY.MM.DD[-N]` under REL-005 and MAN-012. |
 
 ### 20.13 Local release selection
 
 | Alternative | Advantages | Costs and conclusion |
 | --- | --- | --- |
-| Explicit immutable release path | Makes the running selection auditable, keeps API and TiTiler aligned, and makes rollback an explicit redeployment | Promotion requires supplying and recording the path each time. Selected. |
+| Explicit immutable release path | Makes the running selection auditable, keeps API and TiTiler aligned, and makes rollback an explicit redeployment | Promotion requires supplying and recording one path per pinned release. Selected. |
 | Mutable `current` symlink | Provides a convenient stable host path and supports atomic link replacement | Docker resolves bind-mount symlinks at container creation, changing the link does not update running containers, and the displayed source can obscure the actual mounted release. Rejected as a deployment source. |
 | Manifest-based pointer file | Can carry release identity and digest and generalizes to object storage | Compose cannot bind-mount through it directly, so it adds a resolver and mutable deployment state. Deferred to a future orchestration layer and excluded from the release format. |
 
@@ -1833,7 +2119,7 @@ Redis-backed extraction lifecycle.
 | Alternative | Advantages | Costs and conclusion |
 | --- | --- | --- |
 | Immediate cleanup on failure | Minimizes abandoned storage | Removes evidence and reusable outputs, can race a recovering build, and provides a poor human audit boundary. Rejected. |
-| Unattended lifecycle expiration | Requires little custom tooling and handles age-based storage cost | Cannot validate a SKOPE root manifest or active workflow from object absence, and does not provide per-action human authorization and provenance. Rejected for v1, including automatic multipart abort. |
+| Unattended lifecycle expiration | Requires little custom tooling and handles age-based storage cost | Cannot validate a SKOPE release manifest or active workflow from object absence, and does not provide per-action human authorization and provenance. Rejected for v1, including automatic multipart abort. |
 | Idempotent report, explicit authorization, grace period, and idempotent execution | Makes deletion scope and recovery options visible, preserves an audit trail, and lets operators clean infrequent failed builds safely | Retains abandoned bytes until an operator acts and requires operational cleanup records outside the release. Selected under TXN-012 through TXN-016. |
 
 ### 20.15 API/UI protocol cutover
@@ -1845,6 +2131,12 @@ Redis-backed extraction lifecycle.
 | One breaking coordinated API/UI cutover | Produces one explicit contract, removes fallback code, and lets both controlled stacks adopt canonical identifiers and static-raster behavior together | Requires complete staging proof and paired production deployment and rollback. Selected under API-002 through API-010 and MIG-002. |
 
 ### 20.16 STAC-GeoParquet Item mirror
+
+Portolan recommends an item mirror for every raster Collection modeled with
+Items
+([guidance](https://github.com/portolan-sdi/portolan-spec/blob/main/specs/portolan/formats.md#raster));
+SKOPE does not claim Portolan conformance. The closed layout (REL-009) admits no
+mirror, so adding one requires a reviewed specification update.
 
 | Alternative | Advantages | Costs and conclusion |
 | --- | --- | --- |
@@ -1862,14 +2154,16 @@ named owner accepting the result.
 | Decision | Alternatives | Evidence available | Recommended default | Needed experiment or input | Consequence of deferral |
 | --- | --- | --- | --- | --- | --- |
 | Exact temporal chunk policy | One timestep; fixed counts of 25, 100, or 250; target byte size | Temporal PaleoCAR rasters are approximately 1,900-2,000 bands on a 1,560-by-1,440 grid; tile requests read one band while extraction groups many requested bands by file | Use 100 timesteps as a provisional baseline only; choose from the staged experiment using tile latency with extraction and operational guardrails | Run EXP-002 and EXP-003 on representative PaleoCAR variables; do not reproduce every layout for every dataset | COG filenames and Item boundaries cannot be finalized |
-| PaleoCAR v3 source-product semantics | Use unscaled prediction/deviation pair; scaled pair; publish both as explicit variants | Each of twelve S3 quantity directories contains `prediction`, `prediction_scaled`, `pi_deviation`, and `pi_deviation_scaled`; current ingest selects only `prediction_scaled`; TIFF headers declare no explanatory scale, offset, unit, or statistics, and matched samples show scientifically different values | Provisionally select the paired `prediction_scaled` and `pi_deviation_scaled` products, but block production publication until science review; express the choice through META-009 so it is reversible in a new release | Obtain the attributable dataset-creator review record defined in Section 21.2 | Source mappings, uncertainty assets, encoding policy, and release content cannot be finalized |
+| PaleoCAR v3 uncertainty products | Publish estimates only; publish each uncertainty product as a paired variable (for example `<id>_pi_deviation`) | Each of twelve S3 quantity directories contains `prediction`, `prediction_scaled`, `pi_deviation`, and `pi_deviation_scaled`; the estimate is `prediction_scaled`, and `prediction` is an intermediate product; TIFF headers declare no explanatory scale, offset, unit, or statistics | Publish `prediction_scaled` estimates only until the creator answers; if uncertainty is published, add one variable per uncertainty product, paired under META-009 | The dataset creator's answers (Section 21.2) | Uncertainty variables and their pairing cannot be finalized; estimates can be released |
 | PaleoCAR v3 `UInt16` relevance | Preserve source `UInt32`; lossless per-variable `UInt16` | `UInt16` can reduce storage, range traffic, and memory, but current source files lack complete statistics and the dataset-wide switch provides no range or nodata proof | Use source-preserving `UInt32`; permit only per-variable exceptions that pass EXP-004 | Full-domain scans and representative COG, tile, extraction, and summary benchmarks | Releases can proceed with larger `UInt32` outputs; only the optional optimization is deferred |
 | Grid comparison tolerance | Fixed numeric epsilon; pixel-relative; CRS-unit-aware | PaleoCAR source transforms differ at floating representation scale | CRS-unit-aware tolerance capped at a small fraction of a pixel | Test real headers and reprojection libraries across four datasets | Source preflight rules cannot be finalized |
 | Scientific category vocabulary | Preserve free text; SKOPE list; external ontology identifiers | Current `class` values are inconsistent and undocumented | Preserve source terms with warnings | Domain-owner vocabulary review | Category filtering remains non-portable |
+| SRTM legacy resolution | The legacy COG is the 90 m product; it is CGIAR's aggregated 250 m product | The legacy registry reads `250m` under a 90m title, and CGIAR publishes both resolutions | Inspect the legacy COG's pixel size before MIG-006 | Read the legacy COG header | If the legacy product is 250 m, the 90 m rebuild in MIG-006 changes the product and its size |
 | Retention of dataset `status` | Drop it; publish it as `skope:status` | Every dataset carries the identical value `Published`, and the UI accepts it as a prop without rendering it | Drop unless a second meaning is confirmed | Ask whether it meant data readiness (tautological for a release we produce) or peer-reviewed publication of the source (citation metadata, worth keeping) | A field is either published without meaning or dropped without review |
 
 The canonical PaleoCAR v3 quantity inventory and normalized identifiers are
-resolved in Section 5.4. Only the scientific source-product choice remains open.
+resolved in Section 19.1, and the estimate product is `prediction_scaled`. Only
+the publication of uncertainty products remains open.
 
 ### 21.1 Decision ownership
 
@@ -1877,51 +2171,42 @@ Science review SHOULD focus on canonical variable inventories and identifiers;
 calendar, precision, origins, endpoint and aggregation semantics; units,
 scale/offset, rounding, and acceptable precision loss; nodata and all-nodata
 policies; continuous/categorical classification and overview semantics;
-scientific domains versus visualization ranges; categories; uncertainty,
+valid ranges versus visualization ranges; categories; uncertainty,
 methodology, citations, provenance; and whether small grid differences are
 scientifically equivalent.
 
 Engineering owns temporal chunk and interleave benchmarks, COG block and
 compression choices, SRTM single-COG operational validation, deterministic
 toolchains, and STAC-GeoParquet experiments. Operations owns release identifiers,
-local pointers, object-storage cleanup, and static schema publication. Product
+release-set pins, object-storage cleanup, and static schema publication. Product
 owns the coordinated API/UI rollout. Grid equivalence, per-variable encoding, SRTM
 temporal meaning, and any user-visible identifier change require joint review
 with science rather than a unilateral engineering choice.
 
-### 21.2 PaleoCAR v3 dataset-creator review
+### 21.2 PaleoCAR v3 questions for the dataset creator
 
-- **META-013:** The PaleoCAR v3 creator or an explicitly designated scientific
-  steward MUST provide the following review record before a production release
-  is approved. Answers MAY apply to all twelve quantities when genuinely
-  uniform; otherwise the record MUST identify every exception by canonical
-  variable identifier. An answer of `unknown` is acceptable evidence of
-  uncertainty, but it leaves the affected product ineligible for publication
-  until its interpretation is resolved or the product is omitted by an approved
-  release declaration.
+The PaleoCAR v3 metadata predates the curated format, so its release
+maintainer puts the following questions to the dataset creator, or to a
+scientific steward they designate, and records the conclusions in the dataset's
+`curated.yml`. Answers may come in any form, and one answer may cover all twelve
+quantities when it is uniform. The resulting `curated.yml` is then validated
+like any other (META-002). A later dataset arrives with its `curated.yml`
+written by its creator or steward, with or without the release author's help.
 
 | Question for the dataset creator | Requested answer | Why the release needs it |
 | --- | --- | --- |
-| Which file is the intended public best estimate: `prediction` or `prediction_scaled`? | Select one, state whether the answer applies to all twelve quantities, and identify the authoritative source or publication supporting the choice. | Selects the primary estimate asset without inferring intent from a filename or current pipeline behavior. |
+| Is `prediction_scaled` the intended public best estimate for all twelve quantities? | Confirm, or name the intended product and the source or publication supporting it. | Selects the primary estimate asset without inferring intent from a filename or current pipeline behavior. |
 | What operation produced `prediction_scaled` from `prediction`? | Give the formula or algorithm, parameters, rounding behavior, output units, and whether the operation is reversible. If it is not derived directly, say so. | Determines scientific meaning, encoding policy, and whether values can be compared or converted. |
 | What are the units of each of the four products? | Give a [UCUM](https://ucum.org/ucum) unit code when one exists, plus the human-readable unit; explicitly state `unitless` when applicable. | Supports correct labels, summaries, validation, and STAC band metadata. |
 | What does `pi_deviation` represent? | Define `pi`, the statistic stored in each pixel, its confidence or probability level, and the method used to compute it. | Prevents an unsupported interpretation of the uncertainty product. |
 | How is the deviation applied to the prediction? | State whether it is symmetric; provide the exact formula for lower and upper bounds; identify any clipping or transformation domain. | Allows a client or analysis workflow to present uncertainty correctly. |
 | Which uncertainty file is paired with the selected estimate? | Select `pi_deviation`, `pi_deviation_scaled`, neither, or another documented product, and explain why both members occupy compatible units and value space. | Prevents mixed scaled/unscaled pairs and establishes referential integrity. |
 | Is the uncertainty product suitable for public maps, downloads, and numerical analysis? | Answer separately for each use, state any interpretation warning, and identify any prohibited use. | Determines publication roles and presentation without overstating fitness for use. |
-| What values are scientifically valid for each quantity? | Provide inclusive or exclusive lower and upper bounds in physical units, distinguish theoretical from empirically expected bounds, and cite the basis. Do not provide UI color limits here. | Separates scientific domains from observed statistics and visualization ranges. |
+| What values are scientifically valid for each quantity? | Provide inclusive or exclusive lower and upper bounds in physical units, distinguish theoretical from empirically expected bounds, and cite the basis. Do not provide UI color limits here. | Separates valid ranges from observed statistics and visualization ranges. |
 | How should nodata and invalid modeled values be recognized? | Provide the sentinel or mask rule, treatment of NaN or infinities, and whether zero is valid for each product. | Makes conversion, statistics, and all-nodata checks scientifically safe. |
 | What numerical precision must a release preserve? | State acceptable absolute or relative error, significant digits if relevant, and whether exact integer preservation is required. | Governs any later per-variable encoding optimization. |
 | What does each band timestamp represent? | State the calendar, timestamp precision, time origin, interval or instant meaning, aggregation period, and endpoint inclusion rule. | Establishes the reviewed temporal axis and prevents band labels from defining scientific semantics accidentally. |
-| Are the twelve canonical quantities and identifiers complete and correctly named? | Approve the Section 5.4 list or return a corrected mapping from source directory to canonical identifier and display name. | Confirms that operational source discovery did not substitute for scientific inventory review. |
-| Who is accountable for these answers? | Provide the reviewer name, role, organization, ORCID when available, review date, and the version or persistent identifier of supporting documentation. | Makes the approval attributable and reproducible without treating project-level contacts as dataset authors automatically. |
-
-Under META-013, the review record MUST be preserved as a checksummed curated
-source artifact and referenced by the dataset's `curated.yml`. The compiler MUST
-translate only its approved structured conclusions into STAC and SKOPE metadata;
-it MUST NOT publish the questionnaire itself as if it were raster metadata. Any
-later scientific change to an answer MUST produce a new dataset release and MUST
-NOT mutate an existing release.
+| Are the twelve canonical quantities and identifiers complete and correctly named? | Approve the Section 19.1 list or return a corrected mapping from source directory to canonical identifier and display name. | Confirms that operational source discovery did not substitute for scientific inventory review. |
 
 ## 22. Traceability
 
@@ -1934,19 +2219,18 @@ material, not an implementation commitment.
 | AUTH-001 to AUTH-003 | Authority matrix | Typed model and serializers | Mutation/conflict fixtures, curated immutability | 1-4 |
 | ORG-001 to ORG-004 | STAC authority | Dataset STAC builder | Collection count and aligned Item fixtures | 4 |
 | ORG-005 to ORG-008 | Curated identity and release format | Identifier/path library | Pattern, traversal, determinism, relocation tests | 1, 4 |
-| ORG-009 to ORG-012 | Dataset profile and variable declarations | Curated schema and STAC builder | Profile exclusivity, SRTM constraints, and exact PaleoCAR v3 inventory fixtures | 0, 1, 4 |
-| REL-001 to REL-008 | Release format | Release assembler | Layout, link, controlled-input determinism, immutability, and v1 item-mirror exclusion tests | 4-7 |
-| BOOT-007, BOOT-010 | Release identity in the root manifest | Release assembler | CalVer identity, canonical declaration digest, and ID-to-digest binding tests | 1, 7 |
-| META-001 to META-013 | Curated metadata | Curated compiler, identity importer, and source-manifest parser | Schema, source mapping, persistent-identifier, contact-boundary, range-classification, selectable product-role pairs, dataset-creator review records, and full legacy field migration fixtures | 1, 2, 8 |
+| ORG-009, ORG-013 | Dataset profile and STAC object choice | Curated schema and STAC builder | Profile exclusivity and Collection-as-release-root fixtures | 1, 4 |
+| REL-001 to REL-014 | Release format, release set, and published catalog | Release assembler, deployment pin, and catalog publisher | Layout closure, link, controlled-input determinism, immutability, standalone relocation, release-versus-version, pin integrity, and catalog listing tests | 4-7 |
+| META-001 to META-012 | Curated metadata | Curated compiler, identity importer, and source-manifest parser | Schema, source mapping, persistent-identifier, contact-boundary, range-classification, selectable product-role pairs, dataset-creator conclusions recorded in `curated.yml`, and full legacy field migration fixtures | 1, 2, 8 |
 | STAC-001 to STAC-012 | STAC authority | STAC adapters and builder | Pinned schemas, band-time sequence, static profile, links, byte comparison | 4 |
-| SKOPE-001 to SKOPE-010 | SKOPE extension | SKOPE adapter and static publisher | Local schema, referential-integrity, immutable-hosting, and rollback tests | 1, 4 |
-| STYLE-002, STYLE-006, STYLE-009 | Application display document | Display-document schema, legend serializer, and API adapter | Exact-range, legend, and API rendering-field tests | 1, 8 |
+| SKOPE-001, SKOPE-003 to SKOPE-010 | SKOPE extension | SKOPE adapter and static publisher | Local schema, region name, referential-integrity, descriptive-only field, immutable-hosting, and rollback tests | 1, 4 |
+| STYLE-002, STYLE-006, STYLE-009 to STYLE-012 | Application display document | Display-document schema, legend serializer, ordering and map-view resolution, and API adapter | Exact-range, legend, explicit-ordering, named-`lon`/`lat`, default-variable, and API rendering-field tests | 1, 8 |
 | OBS-001 to OBS-013 | Typed observation | Preflight, build plan, and final observation | Source headers, temporal/grid invariants, state and freeze tests | 2, 3 |
 | COG-001 to COG-016 | Byte-level COG authority | COG writer and byte inspector | OGC validator, GDAL inspection, value-space statistics, benchmarks | 3 |
-| MAN-001 to MAN-010 | Integrity manifests | Dataset/root manifest writers | JSON Schema, inventory, checksum, entrypoint, forbidden-field, and orchestration-reference tests | 6, 7 |
-| TXN-001 to TXN-016 | Root manifest, immutable storage, and cleanup authorization | Local/object publisher, deployment adapter, and cleanup tool | Failure injection, retry, visibility, explicit selection, aligned-mount, report-digest, authorization, idempotent-deletion, and provenance tests | 7 |
-| ORCH-001 to ORCH-008 | Release declaration plus operational workflow history | Direct runner or durable workflow adapter | Cross-runner equivalence, replay/retry, payload-boundary, idempotency, completion-record, and provenance-reference tests | 7 |
-| API-001 to API-014 | Validated STAC | App registry generator, time-to-band rule generator, and coordinated SKOPE UI adapter | Version handshake, golden `/metadata`, exact tile/legend ranges, canonical identifiers, static/temporal resolution, rule verification, registry integrity and allowlist coverage, paired deployment/rollback, and reproducibility tests | 5, 8 |
+| MAN-001 to MAN-012 | Integrity manifest and release identity | Release manifest writer | JSON Schema, inventory, checksum, entrypoint, forbidden-field, orchestration-reference, canonical declaration digest, and ID-to-digest binding tests | 1, 6 |
+| TXN-001 to TXN-017 | Release manifest, immutable storage, and cleanup authorization | Local/object publisher, deployment adapter, and cleanup tool | Failure injection, retry, visibility, explicit selection, aligned-mount, report-digest, authorization, idempotent-deletion, and provenance tests | 6 |
+| ORCH-001 to ORCH-009 | Release declaration plus operational workflow history | Direct runner or durable workflow adapter | Cross-runner equivalence, replay/retry, payload-boundary, idempotency, completion-record, and provenance-reference tests | 6 |
+| API-001 to API-018 | Validated STAC | Release overview generator, time-to-band rule generator, registry composer, and coordinated SKOPE UI adapter | Version handshake, golden `/metadata`, exact tile/legend ranges, canonical identifiers, static/temporal resolution, rule verification, registry integrity and allowlist coverage, paired deployment/rollback, and reproducibility tests | 5, 8 |
 | VAL-001 to VAL-008 | All authorities | Validation orchestrator | Pass isolation, structured findings, end-to-end conformance | 1-8 |
 | EXP-001 to EXP-004 | Experimental isolation and benchmark selection | Phase 0 harness | Path and mutation guards plus AT-011, AT-028, and AT-032 performance matrices | 0 |
-| MIG-001 to MIG-006 | Approved migration plan | Migration orchestration | Phase gates, SRTM source reconstruction, and four-dataset coordinated protocol suite | 1-10 |
+| MIG-001 to MIG-011 | Approved migration plan | Migration orchestration | Phase gates, initial dataset decisions, SRTM source reconstruction, and four-dataset coordinated protocol suite | 1-10 |
