@@ -538,7 +538,7 @@ shape.
 - **META-009:** When a dataset publishes uncertainty products alongside its
   estimates, its curated metadata MUST define reviewed semantic roles and
   required pairings for those products without embedding source paths. Section
-  21 records whether PaleoCAR v3 publishes them. The resolved source manifest
+  20 records whether PaleoCAR v3 publishes them. The resolved source manifest
   MUST map those roles to exact source URIs and checksums. Product selection
   MUST be declarative and MUST NOT depend on filename convention or require a
   code or schema change. Changing a selected product MUST create a new immutable
@@ -606,7 +606,7 @@ reviewed specification change and compatibility fixtures.
   [STAC Collection fields](https://github.com/radiantearth/stac-spec/blob/master/collection-spec/collection-spec.md#collection-fields).
 - **STAC-002:** A Collection MUST declare only extension schema URLs actually
   used at Collection scope. Extension URLs MUST equal the pinned versions in
-  Section 8.1.
+  Section 9.1.
 - **STAC-003:** A `TemporalCubeDataset` Collection MUST describe all expected
   variable asset keys in `item_assets` and MUST carry Datacube dimensions and
   variables; each `cube:variables` entry MUST carry the required `dimensions`
@@ -1520,7 +1520,7 @@ the field rename.
   extents, and SKOPE referential integrity.
 - **VAL-006:** COG validation MUST inspect actual COG bytes, not serializer
   dictionaries or planned values, and MUST enforce every requirement in Section
-  13.
+  12.
 - **VAL-007:** Cross-artifact validation MUST compare COG byte facts with STAC,
   verify that the generated time-to-band rule resolves every canonical timestep
   to the band that STAC and the COG bytes actually carry, verify every size and
