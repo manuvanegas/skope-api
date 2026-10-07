@@ -1,0 +1,40 @@
+# Sources and build settings for paleocar_v3 (META-004). Each source is the
+# PaleoCAR `prediction_scaled` product, published under the bare quantity name.
+schema_version: "0.1.0"
+dataset: "paleocar_v3"
+release:
+  created: "2026-10-07T15:10:00Z"
+  chunk_size: 100
+  # PROVISIONAL encoding (spec §20.3): EXP-002, EXP-003, and EXP-004 have not
+  # been run. Their results supersede these values in a new release.
+  cog:
+    blocksize: 512
+    interleave: "BAND"
+    compress: "ZSTD"
+    level: 9
+    bigtiff: "IF_SAFER"
+variables:
+  - id: "gdd_cotton_annual"
+    source:
+      uri: "s3://skope/paleocar_v3/gdd_cotton_annual/prediction_scaled.tif"
+      checksum: "12204386dbde76acd840a144bc4974fd754e27e872d222f7ca8a342bb86760473c99"
+      bands: "descriptions"
+    encoding:
+      data_type: "uint32"
+      nodata: 4294967295
+      scale: 1.0
+      offset: 0.0
+      predictor: 2
+      overview_resampling: "AVERAGE"
+  - id: "ppt_annual"
+    source:
+      uri: "s3://skope/paleocar_v3/ppt_annual/prediction_scaled.tif"
+      checksum: "12209cec240a41ec6683488b51bd0c11081776d476d1de763277608f052819fc6fb5"
+      bands: "descriptions"
+    encoding:
+      data_type: "uint32"
+      nodata: 4294967295
+      scale: 1.0
+      offset: 0.0
+      predictor: 2
+      overview_resampling: "AVERAGE"
