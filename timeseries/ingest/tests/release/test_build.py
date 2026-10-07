@@ -66,6 +66,15 @@ def test_static_release(static_dataset, tmp_path):
     assert overview["variables"]["elevation"]["asset_href"] == "cogs/elevation.tif"
 
 
+def test_release_with_declared_empty_timesteps(temporal_dataset, tmp_path):
+    """OBS-007, STAC-008: a declared empty band passes every build check."""
+    sources = {"alpha": {"empty": ["0102", "0103"]}, "beta": {"empty": ["0102", "0103"]}}
+    gap = {"first": "0102", "last": "0103", "reason": "No reconstruction."}
+    published = publish(temporal_dataset(source_kwargs=sources, curated={"empty_timesteps": [gap]}), tmp_path / "releases")
+    report = Report()
+    assert verify_release(published.path, report) is not None, report.to_text()
+
+
 def test_builds_are_byte_reproducible(temporal_dataset, tmp_path):
     """AT-006, REL-009, API-007."""
     directory = temporal_dataset()

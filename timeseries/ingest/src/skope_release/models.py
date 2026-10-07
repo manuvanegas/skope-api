@@ -159,6 +159,14 @@ class CuratedTemporal(Strict):
         return self
 
 
+class EmptyTimesteps(Strict):
+    """An inclusive run of timesteps with no valid pixels in any variable (OBS-007)."""
+
+    first: TimestepKey
+    last: TimestepKey  # equal to `first` for a single timestep
+    reason: NonEmpty
+
+
 class CuratedVariable(Strict):
     id: Identifier
     title: NonEmpty
@@ -196,6 +204,8 @@ class Curated(Strict):
     links: list[Link] = Field(default_factory=list)
     temporal: CuratedTemporal | None = None
     temporal_extent: tuple[Rfc3339Utc | None, Rfc3339Utc | None] | None = None
+    # Ordered, non-overlapping; checked against the axis and the bytes in preflight.
+    empty_timesteps: list[EmptyTimesteps] = Field(default_factory=list)
     variables: list[CuratedVariable] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -208,6 +218,8 @@ class Curated(Strict):
         else:
             if self.temporal is not None:
                 raise ValueError("a StaticRasterDataset has no temporal axis (ORG-001, API-006)")
+            if self.empty_timesteps:
+                raise ValueError("`empty_timesteps` is for a TemporalCubeDataset; a static band is never empty (OBS-007)")
         if self.license == "other" and self.license_href is None:
             raise ValueError("license `other` requires `license_href`")
         ids = [v.id for v in self.variables]

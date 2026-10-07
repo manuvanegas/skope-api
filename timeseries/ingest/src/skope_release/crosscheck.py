@@ -54,10 +54,7 @@ def check_stac_against_bytes(observation: object, root: Path, report: Report) ->
             if asset.get(key) != value:
                 report.add("AUTH-002", f"{key} is {asset.get(key)!r} in STAC but {value!r} in the bytes", **actx)
         stac_bands = [(b["name"], b["statistics"]) for b in asset.get("bands", [])]
-        byte_bands = [
-            (b.name, {"minimum": b.minimum, "maximum": b.maximum, "mean": b.mean, "stddev": b.stddev, "valid_percent": b.valid_percent})
-            for b in fact.bands
-        ]
+        byte_bands = [(b.name, b.statistics) for b in fact.bands]
         if stac_bands != byte_bands:
             report.add("STAC-008", "Band names or statistics in STAC differ from the bytes", **actx)
     for missing in sorted(set(observed) - seen):

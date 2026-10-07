@@ -2,7 +2,7 @@
 
 Produces a frozen `ValidatedBuildPlan` (OBS-012) or findings. It creates no
 release or scratch output (VAL-004). Requirements: META-001 to META-005,
-META-008, OBS-001 to OBS-006, OBS-008, OBS-009, OBS-011, COG-007, COG-013,
+META-008, OBS-001 to OBS-009, OBS-011, COG-007, COG-013,
 COG-014, COG-016, REL-006, MAN-010, MAN-011, VAL-003.
 """
 
@@ -143,6 +143,66 @@ def _scan_narrowing(read_path: str, band_count: int, source_nodata, target: str,
     return None
 
 
+def _bands_with_data(read_path: str, nodata, band: int | None = None) -> np.ndarray:
+    """OBS-007: whether each band, or the one static `band`, has a valid pixel.
+
+    One pass of full-width swaths over every band; it stops early once every
+    band has shown a valid pixel.
+    """
+    with gdal.Open(read_path) as ds:
+        bands = [band] if band is not None else list(range(1, ds.RasterCount + 1))
+        first = ds.GetRasterBand(bands[0])
+        itemsize = gdal.GetDataTypeSizeBytes(first.DataType)
+        rows = gdalio.swath_rows(ds.RasterXSize, len(bands), itemsize, first.GetBlockSize()[1], ds.RasterYSize)
+        seen = np.zeros(len(bands), dtype=bool)
+        for y in range(0, ds.RasterYSize, rows):
+            swath = ds.ReadAsArray(0, y, ds.RasterXSize, min(rows, ds.RasterYSize - y), band_list=bands)
+            swath = swath.reshape(len(bands), -1)
+            if nodata is None or math.isnan(nodata):
+                valid = np.ones(swath.shape, dtype=bool)
+            else:
+                valid = swath != nodata
+            if np.issubdtype(swath.dtype, np.floating):
+                valid &= np.isfinite(swath)
+            seen |= valid.any(axis=1)
+            if seen.all():
+                break
+    return seen
+
+
+def _declared_empty(curated: Curated, axis: Axis, report: Report, **ctx) -> frozenset[str]:
+    """OBS-007: the timesteps `empty_timesteps` declares, as ordered non-overlapping runs on the axis."""
+    keys = axis.keys()
+    declared: set[str] = set()
+    previous_last = -1
+    for run in curated.empty_timesteps:
+        label = f"empty_timesteps {run.first}..{run.last}"
+        try:
+            first, last = axis.index(run.first), axis.index(run.last)
+        except AxisError as exc:
+            report.add("OBS-007", f"{label}: {exc}", **ctx)
+            continue
+        if first > last:
+            report.add("OBS-007", f"{label}: `first` comes after `last`", **ctx)
+        elif first <= previous_last:
+            report.add("OBS-007", f"{label}: runs must follow axis order without overlapping", **ctx)
+        else:
+            declared.update(keys[first : last + 1])
+            previous_last = last
+    return frozenset(declared)
+
+
+def _runs(indices: list[int], keys: tuple[str, ...]) -> str:
+    """Consecutive axis indices as `0417..0589, 0600`."""
+    runs: list[list[int]] = []
+    for i in indices:
+        if runs and i == runs[-1][1] + 1:
+            runs[-1][1] = i
+        else:
+            runs.append([i, i])
+    return ", ".join(keys[a] if a == b else f"{keys[a]}..{keys[b]}" for a, b in runs)
+
+
 def preflight_dataset(
     files: DatasetFiles,
     *,
@@ -174,6 +234,7 @@ def preflight_dataset(
 
     temporal = curated.profile == "TemporalCubeDataset"
     axis: Axis | None = None
+    empty: frozenset[str] = frozenset()
     if temporal:
         t = curated.temporal
         try:
@@ -182,6 +243,8 @@ def preflight_dataset(
             report.add("OBS-004", str(exc), path=str(files.curated), **ctx)
         if manifest.release.chunk_size is None:
             report.add("META-004", "a temporal dataset's release block needs chunk_size", path=str(files.source_manifest), **ctx)
+        if axis is not None:
+            empty = _declared_empty(curated, axis, report, path=str(files.curated), **ctx)
     elif manifest.release.chunk_size is not None:
         report.add("META-004", "a static dataset's release block omits chunk_size (Section 20.3)", path=str(files.source_manifest), **ctx)
 
@@ -249,6 +312,25 @@ def preflight_dataset(
                 report.add("OBS-006", f"{dupes} duplicate band descriptions", **vctx)
         elif not temporal and src.band is not None and src.band > fact.band_count:
             report.add("OBS-005", f"band {src.band} does not exist; the source has {fact.band_count}", **vctx)
+
+        # OBS-007: empty bands must be exactly the declared empty timesteps.
+        try:
+            if temporal and axis is not None and fact.band_count == axis.count:
+                has_data = _bands_with_data(path, fact.nodata)
+                keys = axis.keys()
+                undeclared = [i for i, key in enumerate(keys) if not has_data[i] and key not in empty]
+                filled = [i for i, key in enumerate(keys) if has_data[i] and key in empty]
+                if undeclared:
+                    report.add("OBS-007", f"timesteps {_runs(undeclared, keys)} have no valid pixels; "
+                               "if that is expected, declare them in curated `empty_timesteps`", **vctx)
+                if filled:
+                    report.add("OBS-007", f"declared empty timesteps {_runs(filled, keys)} have valid pixels", **vctx)
+            elif not temporal and src.band is not None and src.band <= fact.band_count:
+                if not _bands_with_data(path, fact.nodata, src.band)[0]:
+                    report.add("OBS-007", f"band {src.band} has no valid pixels", **vctx)
+        except RuntimeError as exc:  # GDAL read failure
+            report.add("OBS-002", f"cannot read source {src.uri}: {exc}", **vctx)
+            continue
 
         # OBS-011 / META-004: checksum every source.
         try:
@@ -332,6 +414,7 @@ def preflight_dataset(
         layout=layout,
         variables=planned,
         producer=producer,
+        empty_timesteps=empty,
         _issuer=_PLAN_ISSUER,
     )
 

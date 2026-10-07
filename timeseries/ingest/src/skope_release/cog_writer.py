@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
+import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -27,7 +28,6 @@ from .plan import PlannedVariable, ValidatedBuildPlan, require_plan
 
 log = logging.getLogger(__name__)
 
-SWATH_BUDGET_BYTES = 1536 * 1024 * 1024
 _ITEMSIZE = {"uint8": 1, "int8": 1, "uint16": 2, "int16": 2, "uint32": 4, "int32": 4, "float32": 4, "float64": 8}
 
 
@@ -49,14 +49,6 @@ def cog_creation_options(plan: ValidatedBuildPlan, variable: PlannedVariable) ->
     if cog.level is not None:
         options.append(f"LEVEL={cog.level}")
     return options
-
-
-def _swath_rows(width: int, bands: int, itemsize: int, block_height: int, height: int) -> int:
-    per_row = width * bands * itemsize
-    rows = max(1, SWATH_BUDGET_BYTES // per_row)
-    if rows >= block_height:
-        rows -= rows % block_height  # whole source blocks: each tile is decoded once
-    return min(rows, height)
 
 
 def _prepare_scratch(path: Path, plan: ValidatedBuildPlan, variable: PlannedVariable, bands: int, rows_per_strip: int, names: list[str]):
@@ -103,10 +95,32 @@ def _encode(block, variable: PlannedVariable):
     return out
 
 
-def _to_cog(scratch: Path, target: Path, options: list[str], threads: int) -> None:
+_GDAL_PREFIX = {gdal.CE_Debug: "", gdal.CE_Warning: "Warning", gdal.CE_Failure: "ERROR", gdal.CE_Fatal: "FATAL"}
+
+
+def _hide_empty_band_messages(err_class: int, err_no: int, message: str) -> None:
+    """GDAL reports every band it finds no valid pixels in while computing statistics.
+
+    Installed only for a chunk with declared empty timesteps, which preflight
+    proved are the only empty bands (OBS-007). Other messages print as GDAL's
+    default handler prints them.
+    """
+    if "no valid pixels found in sampling" in message:
+        return
+    prefix = _GDAL_PREFIX.get(err_class, "ERROR")
+    sys.stderr.write(f"{prefix} {err_no}: {message}\n" if prefix else f"{message}\n")
+
+
+def _to_cog(scratch: Path, target: Path, options: list[str], threads: int, *, expect_empty: bool = False) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    # NUM_THREADS is operational, not declared: the bytes are the same for any value.
-    gdal.Translate(str(target), str(scratch), format="COG", creationOptions=[*options, f"NUM_THREADS={threads}"])
+    if expect_empty:
+        gdal.PushErrorHandler(_hide_empty_band_messages)
+    try:
+        # NUM_THREADS is operational, not declared: the bytes are the same for any value.
+        gdal.Translate(str(target), str(scratch), format="COG", creationOptions=[*options, f"NUM_THREADS={threads}"])
+    finally:
+        if expect_empty:
+            gdal.PopErrorHandler()
 
 
 def write_temporal_variable(plan: ValidatedBuildPlan, variable: PlannedVariable, staging: Path, scratch_dir: Path) -> list[Path]:
@@ -116,7 +130,7 @@ def write_temporal_variable(plan: ValidatedBuildPlan, variable: PlannedVariable,
     written: list[Path] = []
     with gdal.Open(variable.source_read_path) as src:
         block_height = src.GetRasterBand(1).GetBlockSize()[1]
-        rows = _swath_rows(src.RasterXSize, src.RasterCount, itemsize, block_height, src.RasterYSize)
+        rows = gdalio.swath_rows(src.RasterXSize, src.RasterCount, itemsize, block_height, src.RasterYSize)
         scratch_paths, scratches = [], []
         for chunk in range(layout.chunk_count):
             first, last = layout.bounds(chunk)
@@ -138,16 +152,22 @@ def write_temporal_variable(plan: ValidatedBuildPlan, variable: PlannedVariable,
             scratch.Close()  # the COG step must read complete scratch files
         scratches.clear()
     options = cog_creation_options(plan, variable)
-    jobs = [(path, staging / layout.cog_path(variable.id, chunk)) for chunk, path in enumerate(scratch_paths)]
+    jobs = [
+        (path, staging / layout.cog_path(variable.id, chunk), not plan.empty_timesteps.isdisjoint(layout.chunk_keys(chunk)))
+        for chunk, path in enumerate(scratch_paths)
+    ]
     # Chunks are independent, so they may convert in parallel; bytes do not depend on the order.
     parallel, threads = conversion_parallelism(_cpu_count(), os.environ.get("SKOPE_RELEASE_WORKERS"))
     log.info("%s: converting %d chunks, %d at a time with %d threads each", variable.id, len(jobs), parallel, threads)
     with ProcessPoolExecutor(max_workers=parallel, mp_context=multiprocessing.get_context("spawn")) as pool:
-        futures = {pool.submit(_convert, str(scratch), str(target), options, threads): target for scratch, target in jobs}
+        futures = {
+            pool.submit(_convert, str(scratch), str(target), options, threads, expect_empty): target
+            for scratch, target, expect_empty in jobs
+        }
         for future in as_completed(futures):
             future.result()
             log.info("wrote %s", futures[future].relative_to(staging))
-    for scratch, target in jobs:
+    for scratch, target, _ in jobs:
         scratch.unlink()
         written.append(target)
     return written
@@ -178,16 +198,16 @@ def _cpu_count() -> int:
         return os.cpu_count() or 1
 
 
-def _convert(scratch: str, target: str, options: list[str], threads: int) -> None:
+def _convert(scratch: str, target: str, options: list[str], threads: int, expect_empty: bool) -> None:
     gdalio.configure()
-    _to_cog(Path(scratch), Path(target), options, threads)
+    _to_cog(Path(scratch), Path(target), options, threads, expect_empty=expect_empty)
 
 
 def write_static_variable(plan: ValidatedBuildPlan, variable: PlannedVariable, staging: Path, scratch_dir: Path) -> list[Path]:
     path = scratch_dir / f"{variable.id}.tif"
     with gdal.Open(variable.source_read_path) as src:
         block_height = src.GetRasterBand(variable.source_band).GetBlockSize()[1]
-        rows = _swath_rows(src.RasterXSize, 1, _ITEMSIZE[variable.encoding.data_type], block_height, src.RasterYSize)
+        rows = gdalio.swath_rows(src.RasterXSize, 1, _ITEMSIZE[variable.encoding.data_type], block_height, src.RasterYSize)
         scratch = _prepare_scratch(path, plan, variable, 1, rows, [variable.id])
         band = src.GetRasterBand(variable.source_band)
         for y in range(0, src.RasterYSize, rows):

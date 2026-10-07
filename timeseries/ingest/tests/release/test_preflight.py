@@ -138,3 +138,68 @@ def test_static_rules(static_dataset):
     directory = static_dataset()
     edit(directory, "source-manifest.yml", lambda d: d["release"].update(chunk_size=10))
     assert "META-004" in requirements(run(directory)[1])
+
+
+# OBS-007: empty bands must be exactly the declared empty timesteps.
+
+GAP = {"first": "0101", "last": "0102", "reason": "No reconstruction."}
+EMPTY_SOURCES = {"alpha": {"empty": ["0101", "0102"]}, "beta": {"empty": ["0101", "0102"]}}
+
+
+def messages(report, requirement):
+    return [f.message for f in report.errors if f.requirement == requirement]
+
+
+def test_undeclared_empty_bands_fail(temporal_dataset):
+    plan, report = run(temporal_dataset(source_kwargs=EMPTY_SOURCES))
+    assert plan is None
+    assert messages(report, "OBS-007")[0].startswith("timesteps 0101..0102 have no valid pixels")
+
+
+def test_declared_empty_timesteps_pass(temporal_dataset):
+    plan, report = run(temporal_dataset(source_kwargs=EMPTY_SOURCES, curated={"empty_timesteps": [GAP]}))
+    assert plan is not None, report.to_text()
+    assert plan.empty_timesteps == {"0101", "0102"}
+
+
+def test_a_single_empty_timestep_has_first_equal_to_last(temporal_dataset):
+    sources = {"alpha": {"empty": ["0103"]}, "beta": {"empty": ["0103"]}}
+    gap = {"first": "0103", "last": "0103", "reason": "Lost."}
+    plan, report = run(temporal_dataset(source_kwargs=sources, curated={"empty_timesteps": [gap]}))
+    assert plan is not None, report.to_text()
+    assert plan.empty_timesteps == {"0103"}
+
+
+def test_declared_empty_timesteps_must_be_empty_in_every_variable(temporal_dataset):
+    sources = {"alpha": {"empty": ["0101", "0102"]}, "beta": {"empty": ["0101"]}}
+    plan, report = run(temporal_dataset(source_kwargs=sources, curated={"empty_timesteps": [GAP]}))
+    assert plan is None
+    found = [f for f in report.errors if f.requirement == "OBS-007"]
+    assert [(f.variable, f.message) for f in found] == [("beta", "declared empty timesteps 0102 have valid pixels")]
+
+
+@pytest.mark.parametrize(
+    "runs",
+    [
+        [{"first": "0101", "last": "0109", "reason": "Off the axis."}],
+        [{"first": "0102", "last": "0101", "reason": "Backwards."}],
+        [{"first": "0102", "last": "0102", "reason": "Out of order."}, {"first": "0101", "last": "0101", "reason": "x"}],
+        [{"first": "0101", "last": "0102", "reason": "Overlap."}, {"first": "0102", "last": "0103", "reason": "x"}],
+    ],
+)
+def test_empty_timesteps_are_ordered_runs_on_the_axis(temporal_dataset, runs):
+    plan, report = run(temporal_dataset(curated={"empty_timesteps": runs}))
+    assert plan is None and "OBS-007" in requirements(report)
+
+
+def test_a_static_band_is_never_empty(static_dataset, tmp_path):
+    directory = static_dataset()
+    write_source(tmp_path / "sources" / "elevation.tif", ["band1"], empty=["band1"])
+    plan, report = run(directory)
+    assert plan is None and messages(report, "OBS-007") == ["band 1 has no valid pixels"]
+
+
+def test_a_static_dataset_has_no_empty_timesteps(static_dataset):
+    directory = static_dataset()
+    edit(directory, "curated.yml", lambda d: d.update(empty_timesteps=[GAP]))
+    assert "META-001" in requirements(run(directory)[1])

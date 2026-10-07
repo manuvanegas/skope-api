@@ -74,6 +74,7 @@ class ValidatedBuildPlan:
     layout: ChunkLayout | None
     variables: tuple[PlannedVariable, ...]
     producer: Producer
+    empty_timesteps: frozenset[str]  # declared, and verified against every source (OBS-007)
     _issuer: object
 
     def __post_init__(self):
@@ -95,12 +96,26 @@ class ValidatedBuildPlan:
 
 @dataclass(frozen=True)
 class BandObservation:
+    """A declared empty band (OBS-007) has valid_percent 0 and no other statistics."""
+
     name: str
-    minimum: float
-    maximum: float
-    mean: float
-    stddev: float
+    minimum: float | None
+    maximum: float | None
+    mean: float | None
+    stddev: float | None
     valid_percent: float
+
+    @property
+    def statistics(self) -> dict[str, float]:
+        """The STAC band `statistics` object (STAC-008)."""
+        values = {
+            "minimum": self.minimum,
+            "maximum": self.maximum,
+            "mean": self.mean,
+            "stddev": self.stddev,
+            "valid_percent": self.valid_percent,
+        }
+        return {key: value for key, value in values.items() if value is not None}
 
 
 @dataclass(frozen=True)

@@ -1,14 +1,21 @@
 """Inspecting written COGs (AT-010, AT-011; COG-001 to COG-009, OBS-007)."""
 
+import dataclasses
+import json
+
 import numpy as np
 import pytest
 from osgeo import gdal
 
-from skope_release.cog_writer import write_cogs
+from skope_release.cog_writer import _to_cog, cog_creation_options, write_cogs
+from skope_release.crosscheck import check_stac_against_bytes
 from skope_release.findings import Report
 from skope_release.inspect_bytes import inspect_asset, observe
 from skope_release.plan import Producer
 from skope_release.preflight import DatasetFiles, preflight_dataset
+from skope_release.stac_serializer import write_stac
+
+from stage_helpers import plan_for
 
 
 @pytest.fixture
@@ -92,3 +99,49 @@ def test_non_cog_is_rejected(staged):
     gdal.Translate(str(path) + ".gtiff", str(path), format="GTiff", creationOptions=["TILED=NO", "COMPRESS=NONE"])
     (staging / (rel + ".gtiff")).replace(path)
     assert {"COG-001", "COG-003"} & reinspect(plan, staging, rel)
+
+
+# OBS-007, COG-004, STAC-008: declared empty timesteps, end to end.
+
+
+@pytest.fixture
+def gap_plan(temporal_dataset):
+    sources = {"alpha": {"empty": ["0101"]}, "beta": {"empty": ["0101"]}}
+    gap = {"first": "0101", "last": "0101", "reason": "No reconstruction."}
+    return plan_for(temporal_dataset(source_kwargs=sources, curated={"empty_timesteps": [gap]}))
+
+
+def test_declared_empty_bands_round_trip(gap_plan, tmp_path, capfd):
+    staging = tmp_path / "staging"
+    write_cogs(gap_plan, staging, tmp_path / "scratch")
+    assert "no valid pixels" not in capfd.readouterr().err  # GDAL's message is expected and hidden
+
+    report = Report()
+    obs = observe(gap_plan, staging, report)
+    assert obs is not None, report.to_text()
+    full, empty = obs.asset("alpha", 0).bands
+    assert set(full.statistics) == {"minimum", "maximum", "mean", "stddev", "valid_percent"}
+    assert (empty.name, empty.statistics) == ("0101", {"valid_percent": 0.0})
+
+    write_stac(obs, staging)
+    item = json.loads((staging / "items" / "synth--0100--0101.json").read_text())
+    assert item["assets"]["alpha"]["bands"][1] == {"name": "0101", "statistics": {"valid_percent": 0.0}}
+    check_stac_against_bytes(obs, staging, report)
+    assert report.ok, report.to_text()
+
+
+def test_an_undeclared_empty_band_is_obs_007(gap_plan, tmp_path):
+    staging = tmp_path / "staging"
+    write_cogs(gap_plan, staging, tmp_path / "scratch")
+    undeclared = dataclasses.replace(gap_plan, empty_timesteps=frozenset())
+    assert reinspect(undeclared, staging, "cogs/alpha/synth--0100--0101.tif") == {"OBS-007"}
+
+
+def test_gdal_empty_band_message_is_shown_unless_expected(gap_plan, tmp_path, capfd):
+    write_cogs(gap_plan, tmp_path / "staging", tmp_path / "scratch")
+    cog = tmp_path / "staging" / "cogs/alpha/synth--0100--0101.tif"
+    options = cog_creation_options(gap_plan, gap_plan.variables[0])
+    _to_cog(cog, tmp_path / "again.tif", options, 1)
+    assert "no valid pixels" in capfd.readouterr().err
+    with pytest.raises(RuntimeError):  # real failures still raise
+        _to_cog(tmp_path / "missing.tif", tmp_path / "out.tif", options, 1, expect_empty=True)

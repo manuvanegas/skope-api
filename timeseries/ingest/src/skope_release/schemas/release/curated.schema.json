@@ -172,6 +172,34 @@
       "title": "CuratedVariable",
       "type": "object"
     },
+    "EmptyTimesteps": {
+      "additionalProperties": false,
+      "description": "An inclusive run of timesteps with no valid pixels in any variable (OBS-007).",
+      "properties": {
+        "first": {
+          "pattern": "^\\d{4}(-\\d{2}(-\\d{2}(T\\d{2}:\\d{2}:\\d{2}Z)?)?)?$",
+          "title": "First",
+          "type": "string"
+        },
+        "last": {
+          "pattern": "^\\d{4}(-\\d{2}(-\\d{2}(T\\d{2}:\\d{2}:\\d{2}Z)?)?)?$",
+          "title": "Last",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "first",
+        "last",
+        "reason"
+      ],
+      "title": "EmptyTimesteps",
+      "type": "object"
+    },
     "Link": {
       "additionalProperties": false,
       "properties": {
@@ -412,6 +440,13 @@
       ],
       "default": null,
       "title": "Doi"
+    },
+    "empty_timesteps": {
+      "items": {
+        "$ref": "#/$defs/EmptyTimesteps"
+      },
+      "title": "Empty Timesteps",
+      "type": "array"
     },
     "id": {
       "pattern": "^[a-z][a-z0-9_]*$",

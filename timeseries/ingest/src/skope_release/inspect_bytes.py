@@ -128,10 +128,29 @@ def inspect_asset(
             if band.GetUnitType() != variable.curated.unit:
                 report.add("COG-006", f"unit {band.GetUnitType()!r} differs from {variable.curated.unit!r}", **bctx)
             meta = band.GetMetadata()
+            # GDAL embeds only the valid percent for a band with no valid pixels,
+            # so it decides which statistics COG-004 requires.
+            try:
+                evalid = float(meta["STATISTICS_VALID_PERCENT"])
+            except (KeyError, ValueError):
+                report.add("COG-004", "embedded valid percent is missing", **bctx)
+                continue
+            declared_empty = name in plan.empty_timesteps
+            if evalid == 0:
+                if not declared_empty:
+                    report.add("OBS-007", "band has no valid pixels and is not a declared empty timestep", **bctx)
+                elif _recompute(band, enc.nodata) is not None:
+                    report.add("COG-004", "embedded valid percent is 0 but the band has valid pixels", **bctx)
+                else:
+                    bands.append(BandObservation(name, None, None, None, None, 0.0))
+                continue
+            if declared_empty:
+                report.add("OBS-007", f"declared empty timestep has valid pixels ({evalid}%)", **bctx)
+                continue
             try:
                 embedded = tuple(float(meta[key]) for key in (
-                    "STATISTICS_MINIMUM", "STATISTICS_MAXIMUM", "STATISTICS_MEAN", "STATISTICS_STDDEV", "STATISTICS_VALID_PERCENT"
-                ))
+                    "STATISTICS_MINIMUM", "STATISTICS_MAXIMUM", "STATISTICS_MEAN", "STATISTICS_STDDEV"
+                )) + (evalid,)
             except (KeyError, ValueError):
                 report.add("COG-004", "embedded statistics are missing", **bctx)
                 continue
@@ -140,7 +159,7 @@ def inspect_asset(
                 continue
             measured = _recompute(band, enc.nodata)
             if measured is None:
-                report.add("OBS-007", "band has no valid pixels and no policy permits it", **bctx)
+                report.add("COG-004", f"embedded valid percent is {evalid} but the band has no valid pixels", **bctx)
                 continue
             emin, emax, emean, estd, evalid = embedded
             mmin, mmax, mmean, mstd, mvalid = measured

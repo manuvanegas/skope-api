@@ -33,6 +33,20 @@ INTEGER_RANGES = {
 }
 
 _CHUNK = 8 * 1024 * 1024
+SWATH_BUDGET_BYTES = 1536 * 1024 * 1024
+
+
+def swath_rows(width: int, bands: int, itemsize: int, block_height: int, height: int) -> int:
+    """Rows per full-width read of every band within SWATH_BUDGET_BYTES.
+
+    Reading all bands per swath decodes each tile of a pixel-interleaved
+    source once, rather than once per band.
+    """
+    per_row = width * bands * itemsize
+    rows = max(1, SWATH_BUDGET_BYTES // per_row)
+    if rows >= block_height:
+        rows -= rows % block_height  # whole source blocks: each tile is decoded once
+    return min(rows, height)
 
 
 def configure() -> None:

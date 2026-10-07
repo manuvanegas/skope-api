@@ -99,16 +99,7 @@ def _asset(obs: FinalObservation, asset: AssetObservation, href: str) -> dict[st
         "file:size": asset.size,
         "file:checksum": asset.checksum,
         "bands": [
-            {
-                "name": band.name,  # STAC-011
-                "statistics": {
-                    "minimum": band.minimum,
-                    "maximum": band.maximum,
-                    "mean": band.mean,
-                    "stddev": band.stddev,
-                    "valid_percent": band.valid_percent,
-                },
-            }
+            {"name": band.name, "statistics": band.statistics}  # STAC-011, STAC-008
             for band in asset.bands
         ],
     }

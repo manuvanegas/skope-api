@@ -21,7 +21,8 @@ CREATED = "2026-10-07T12:00:00Z"
 
 
 def write_source(path: Path, keys: list[str], *, width=40, height=30, dtype=gdal.GDT_UInt32, nodata=UINT32_NODATA,
-                 seed=0, categories=None, geotransform=GT, epsg=4269) -> np.ndarray:
+                 seed=0, categories=None, geotransform=GT, epsg=4269, empty=()) -> np.ndarray:
+    """Bands whose key is in `empty` hold only nodata."""
     rng = np.random.default_rng(seed)
     ds = gdal.GetDriverByName("GTiff").Create(str(path), width, height, len(keys), dtype, options=["INTERLEAVE=PIXEL", "TILED=YES", "BLOCKXSIZE=16", "BLOCKYSIZE=16"])
     ds.SetGeoTransform(geotransform)
@@ -37,6 +38,8 @@ def write_source(path: Path, keys: list[str], *, width=40, height=30, dtype=gdal
             data = rng.integers(0, 4000, size=(height, width)).astype(np.uint32)
         if nodata is not None:
             data[:3, :3] = nodata
+            if key in empty:
+                data[:] = nodata
         band = ds.GetRasterBand(i)
         band.WriteArray(data)
         if nodata is not None:
