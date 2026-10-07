@@ -411,8 +411,10 @@ records why they are not combined into a single aggregate artifact.
 ### 7.1 Content boundary
 
 - **META-001:** There MUST be one curated authoring document per dataset
-  identity, named `<dataset-id>/curated.yml`. Its schema validation MUST enforce
-  the curated content boundary in this section.
+  identity, at `timeseries/ingest/datasets/<dataset-id>/curated.yml` in the
+  skope-api repository. The dataset's source manifest (META-004) MUST sit beside
+  it as `source-manifest.yml`. Schema validation of the curated document MUST
+  enforce the curated content boundary in this section.
 - **META-002:** A curated file MUST contain:
 
   - for the dataset: title, description, license, providers, and a
@@ -1510,6 +1512,12 @@ the field rename.
 - **VAL-002:** Every finding MUST include a stable requirement ID, severity,
   message, artifact or source path, and dataset/variable/chunk/band context when
   applicable. Validation SHOULD support human text and complete structured JSON.
+  A build MUST write its findings to standard output and MUST exit with a
+  failure status while any error-severity finding remains; findings are not part
+  of a release (REL-001). A successful build MUST also print each published
+  release's ID, declaration digest, and the SHA-256 of its
+  `release-manifest.json`, the three values a pin records (release consumption
+  specification PIN-001).
 - **VAL-003:** Curated validation MUST reject missing or unknown required fields
   (META-002), observed fields, malformed citations/providers, duplicate
   identifiers, and unresolved internal references.

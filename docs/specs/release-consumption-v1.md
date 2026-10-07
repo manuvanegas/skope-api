@@ -66,7 +66,9 @@ here.
   because the manifest records the checksum of every other file; the declaration
   digest identifies only the inputs. The pin file MUST NOT be assigned an
   identifier or digest of its own, and MUST NOT be published as a release
-  artifact.
+  artifact. The deployment MUST derive the API and TiTiler release mounts
+  (release specification TXN-011) from the pin file's `release_root` rather
+  than configure them separately.
 
 ```yaml
 release_root: /srv/datasets/releases      # or an object-storage prefix
@@ -88,7 +90,10 @@ releases:
   digest against the pin; and that every inventoried file exists with its
   recorded size. It MUST refuse to serve on any mismatch rather than falling
   back or serving the remaining datasets. Full byte verification happens at
-  promotion (release specification TXN-011).
+  promotion (release specification TXN-011). A refusal MUST log one structured
+  error per failed check, naming the requirement ID, dataset, release ID, and
+  the expected and observed values, and the API process MUST then exit with a
+  failure status.
 - **PIN-005:** The app registry MUST be the mechanical composition of the pinned
   overviews: selecting and concatenating them, never editing, merging, or
   reinterpreting their contents. The API MUST refuse to start if two pinned
@@ -223,9 +228,10 @@ rebuilds the TiTiler image, which the paired deployment does anyway.
   range; ranges are finite with lower less than upper; explicit ticks lie within
   the range; every `order` is numeric; `map_view` uses `lon`/`lat` within WGS 84
   ranges; and no unknown field appears.
-- **DISP-013:** API startup MUST refuse to serve when a check that needs the
-  pinned overviews fails: DISP-001 coverage, DISP-002 type agreement, DISP-007
-  default variables, and DISP-010 colour counts.
+- **DISP-013:** API startup MUST refuse to serve, reporting as PIN-004
+  requires, when a check that needs the pinned overviews fails: DISP-001
+  coverage, DISP-002 type agreement, DISP-007 default variables, and DISP-010
+  colour counts.
 
 ## 5. `/metadata`
 

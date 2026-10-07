@@ -59,7 +59,7 @@ disagree, the build fails rather than picking one.
 ### 1.3 The flow
 
 ```text
-  <dataset-id>/curated.yml        source manifest (+ release: block)
+  datasets/<id>/curated.yml       datasets/<id>/source-manifest.yml (+ release: block)
             │                                │
             └──────────────┬─────────────────┘
                            ▼
@@ -118,7 +118,8 @@ releases that only repackage it.
 
 ### 2.1 Check `curated.yml`
 
-Each dataset has one `curated.yml`. It holds what a person knows about the data,
+Each dataset has one `curated.yml`, at
+`timeseries/ingest/datasets/<dataset-id>/curated.yml`. It holds what a person knows about the data,
 and nothing that can be measured or that only affects display.
 
 It must contain:
@@ -152,7 +153,8 @@ answers come from the dataset creator; see spec §20.2 for the questions.
 
 ### 2.2 Check the source manifest
 
-The source manifest says where the bytes come from and how to encode them. It
+The source manifest, `source-manifest.yml` beside the dataset's `curated.yml`,
+says where the bytes come from and how to encode them. It
 carries no descriptive or scientific meaning; that belongs in `curated.yml`.
 
 - [ ] The dataset ID matches `curated.yml`.
@@ -229,7 +231,8 @@ If any step fails, no manifest is written and nothing becomes selectable.
 
 ### 3.2 Inspect the result
 
-- **The validation report:** zero errors is required; read the warnings (for
+- **The validation report:** the build prints it to standard output and exits
+  with a failure status while any error remains. Zero errors is required; read the warnings (for
   example, a category outside the reviewed vocabulary).
 - **`overview.yml`:** the human-readable summary. Check titles, units, extent,
   grid, time axis (`origin`, `step`, `count`, `chunk_size`), and each variable's
@@ -238,6 +241,8 @@ If any step fails, no manifest is written and nothing becomes selectable.
 - **`release-manifest.json`:** status `complete`, the release ID, the
   declaration digest, every source with its checksum, and an inventory of every
   file in the release.
+- **The pin values:** a successful build prints each release's ID, declaration
+  digest, and manifest SHA-256. Copy them into the pin (4.1).
 
 ### 3.3 Publish
 
@@ -307,7 +312,8 @@ releases:
 
 - **`release_root`:** the single storage root every pinned release sits under,
   as a resolved physical path or an object-storage prefix. A release built
-  somewhere else has to be copied there first.
+  somewhere else has to be copied there first. The API and TiTiler mounts are
+  derived from this value, so it is the only place the root is configured.
 - **`release_id`:** the release's directory name under the root.
 - **`declaration_digest`:** copy it from the manifest's `declaration.digest` (or
   `declaration_digest` in `overview.yml`).
@@ -400,8 +406,10 @@ Promotion, for each newly pinned release:
 
 The API then runs the startup checks in 4.3. **Any failure stops the whole
 API**, not just the dataset at fault: it does not fall back to an older release
-or serve the remaining datasets. One bad pin entry therefore takes the
-environment down, which is why promotion checks every byte first.
+or serve the remaining datasets. The API logs one structured error per failed
+check, naming the requirement ID, dataset, release ID, and the expected and
+observed values, then exits with a failure status. One bad pin entry therefore
+takes the environment down, which is why promotion checks every byte first.
 
 ### 4.5 Roll back
 
@@ -503,9 +511,8 @@ clearly. Remove this section when the draft becomes the README.
 
 ### Building and publishing (release spec)
 
-1. **Where the authoring files live.** META-001 names `<dataset-id>/curated.yml`
-   but not the directory it sits under. The source manifest has no filename or
-   location at all.
+1. **Resolved (META-001):** authoring files live at
+   `timeseries/ingest/datasets/<dataset-id>/{curated.yml,source-manifest.yml}`.
 2. **Where the resolved source manifest is kept.** META-004 has preflight add
    computed checksums and freeze the resolved manifest, but VAL-004 says
    preflight creates no release or scratch output. Reproducibility (REL-009)
@@ -527,21 +534,16 @@ clearly. Remove this section when the draft becomes the README.
    cleanup may never delete a valid release (TXN-009). A release that validates
    but turns out wrong is simply never pinned, and its ID is used up. That is
    probably fine, but the README should be able to say so with spec backing.
-7. **Where validation reports go.** VAL-002 defines their content and MIG-001
-   requires reviewable reports, but they are not part of a release (closed
-   layout) and no location is named. The build's output would also be the
-   natural place to print the `manifest_sha256` the pin needs (PIN-001);
-   nothing asks for it, so the deployer has to compute it by hand.
+7. **Resolved (VAL-002):** reports go to standard output, and a successful build
+   prints the release ID, declaration digest, and manifest SHA-256 for the pin.
 8. **When a reproducibility rebuild runs.** API-007 requires a rebuild to
    regenerate the overview and byte-compare it, but no step says when a rebuild
    happens: routinely, in CI, or on demand.
 
 ### Deploying (consumption spec, with release spec §14)
 
-9. **What a startup refusal looks like.** PIN-004 and DISP-013 say the API
-   refuses to serve, but not what it reports. VAL-002's structured findings
-   cover release validation only. Without a defined output, the README can't
-   tell an operator what to look for.
+9. **Resolved (PIN-004, DISP-013):** one structured log error per failed check,
+   then a failure exit.
 10. **What "deployment state" is.** TXN-011 records release IDs, digests, paths,
     and verification results in it, and DISP-011 adds the palettes commit, but
     neither spec says where it lives, what format it has, or who reads it.
@@ -551,10 +553,8 @@ clearly. Remove this section when the draft becomes the README.
 12. **Whether rollback re-verifies.** TXN-011 fully verifies each *newly* pinned
     release. When rollback re-pins a release that was verified before, does it
     get full verification again or only the startup checks?
-13. **`release_root` versus the container mount.** PIN-001 puts the release
-    root in the pin file, and TXN-011 requires the API and TiTiler to mount it by
-    its resolved physical path. Nothing says the Compose mount is derived from
-    the pin, so the two could be configured separately and disagree.
+13. **Resolved (PIN-001):** the API and TiTiler mounts are derived from the pin's
+    `release_root`.
 14. **Two lists of startup checks.** TXN-011 lists manifest digest, overview
     identity, and file sizes; PIN-004 adds the overview checksum against its
     manifest entry. They agree today, but one should reference the other so
