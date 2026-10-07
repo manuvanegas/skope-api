@@ -513,32 +513,20 @@ clearly. Remove this section when the draft becomes the README.
 
 1. **Resolved (META-001):** authoring files live at
    `timeseries/ingest/datasets/<dataset-id>/{curated.yml,source-manifest.yml}`.
-2. **Where the resolved source manifest is kept.** META-004 has preflight add
-   computed checksums and freeze the resolved manifest, but VAL-004 says
-   preflight creates no release or scratch output. Reproducibility (REL-009)
-   needs the resolved manifest kept. Is it written back, committed, or stored
-   elsewhere?
-3. **Allocating `-N` and "approval".** REL-006 needs to know which release IDs
-   already exist for a dataset on a date, but names no record of assigned IDs.
-   It also ties the date to the "approved" declaration, and no approval step is
-   defined (§20.1 says operations owns release identifiers).
-4. **A pipeline change with an unchanged declaration.** If a new producer
-   revision or toolchain changes the output bytes, REL-008 requires a new
-   release ID. The declaration digest is unchanged, and REL-006 only assigns a
-   new ID to a new declaration. Either two IDs may share one digest, or the
-   author must bump `release.created` to force a new declaration. The spec
-   should say which.
-5. **`chunk_size` for a static dataset.** META-004 requires `chunk_size` in every
-   `release:` block; a static raster has no time axis. Presumably omitted.
-6. **Retracting a bad release.** Publishing is immediate (TXN-001 step 7) and
-   cleanup may never delete a valid release (TXN-009). A release that validates
-   but turns out wrong is simply never pinned, and its ID is used up. That is
-   probably fine, but the README should be able to say so with spec backing.
+2. **Resolved, provisionally (spec §20.3):** checksums are recorded in the
+   release manifest's `sources`; authors should commit them.
+3. **Resolved, provisionally (spec §20.3):** a `releases.yml` ledger beside the
+   authoring files; approval is the reviewed commit of `release.created` with its
+   ledger entry.
+4. **Resolved, provisionally (spec §20.3):** bump `release.created`; two IDs
+   never share a digest.
+5. **Resolved, provisionally (spec §20.3):** omitted.
+6. **Resolved, provisionally (spec §20.3):** never pinned; the ledger marks it
+   `withdrawn`.
 7. **Resolved (VAL-002):** reports go to standard output, and a successful build
    prints the release ID, declaration digest, and manifest SHA-256 for the pin.
-8. **When a reproducibility rebuild runs.** API-007 requires a rebuild to
-   regenerate the overview and byte-compare it, but no step says when a rebuild
-   happens: routinely, in CI, or on demand.
+8. **Resolved, provisionally (spec §20.3):** on demand, and in CI against a
+   synthetic fixture.
 
 ### Deploying (consumption spec, with release spec §14)
 
@@ -555,7 +543,4 @@ clearly. Remove this section when the draft becomes the README.
     get full verification again or only the startup checks?
 13. **Resolved (PIN-001):** the API and TiTiler mounts are derived from the pin's
     `release_root`.
-14. **Two lists of startup checks.** TXN-011 lists manifest digest, overview
-    identity, and file sizes; PIN-004 adds the overview checksum against its
-    manifest entry. They agree today, but one should reference the other so
-    they can't drift.
+14. **Resolved:** TXN-011 now refers to PIN-004.

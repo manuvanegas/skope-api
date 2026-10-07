@@ -329,7 +329,8 @@ as an index file.
   MUST be emitted as YAML 1.2 with a pinned emitter configuration: every string
   scalar quoted, fixed indentation and line width, block style except where a
   requirement specifies flow style, and the shortest round-trip representation
-  for floating-point numbers.
+  for floating-point numbers. Numeric arrays (`bbox`, `shape`, `transform`) and an
+  axis's `values` use flow style (provisional, Section 20.3).
 - **REL-006:** A release identifier MUST use the form
   `<dataset-id>-r-YYYY.MM.DD` for the first approved declaration for that
   dataset on a UTC date and `<dataset-id>-r-YYYY.MM.DD-N`, where `N` starts at
@@ -703,6 +704,7 @@ skope:uncertainty:
 | `category` | non-empty string | Optional subject category, such as precipitation or temperature, from the reviewed SKOPE vocabulary. |
 | `categories` | map of encoded value to label | Required for a categorical variable: what each encoded value means. Colours and display strings are presentation and live in the display files (release consumption specification); this field is the scientific meaning, without which extraction results and external STAC consumers see bare numbers. |
 | `skope:uncertainty` | object | Optional; contains non-empty `summary` and nullable `methodology_href`. |
+| `skope:temporal` | object | Required for a `TemporalCubeDataset` (provisional, Section 20.3): the curated temporal semantics STAC does not carry, `calendar`, `precision`, `timestep_meaning` (`aggregation_period` or `instant`), `endpoint_inclusion`, and a human-readable `description` of what a timestep represents. It lets the overview carry the axis semantics (API-010) while reading only STAC (API-001). |
 
 - **SKOPE-001:** The extension MUST be scoped to STAC Collections and MUST NOT
   duplicate a field provided by STAC core or a pinned extension.
@@ -863,9 +865,12 @@ Adopting these requirements does not by itself establish Portolan conformance.
   depend on `.aux.xml` or other PAM sidecars. This follows Portolan's
   [embedded raster statistics requirement](https://github.com/portolan-sdi/portolan-spec/blob/main/specs/portolan/formats.md#raster).
 - **COG-006:** Every COG MUST encode its canonical CRS and geotransform, and every
-  band MUST encode reviewed nodata, unit when known, scale, and offset. Temporal
-  band descriptions MUST equal canonical ISO timestep identifiers; static band
-  descriptions MUST equal reviewed variable or band identifiers.
+  band MUST encode reviewed nodata, unit when known, scale, and offset. A band
+  whose scale is 1 and offset is 0 encodes them by omitting both, which is how
+  GDAL writes and reads that pair; STAC and the overview still state both
+  values. Temporal band descriptions MUST equal canonical ISO timestep
+  identifiers; static band descriptions MUST equal reviewed variable or band
+  identifiers.
 - **COG-007:** Overview resampling MUST be specified per variable. Categorical
   data MUST use a category-preserving method; continuous variables MUST use a
   scientifically reviewed method.
@@ -1113,9 +1118,8 @@ transaction. The release manifest supplies an application-level commit protocol.
   Promotion MUST fully verify each newly pinned release, checking every file's
   size and checksum against its manifest, and MUST record each selected release
   ID, declaration digest, manifest digest, resolved path, and verification
-  result in deployment state. At startup, the API MUST check each pinned
-  release's manifest digest and overview (API-008) and that every inventoried
-  file exists with its recorded size. Promotion and rollback MUST recreate both
+  result in deployment state. At startup, the API MUST run the checks in
+  release consumption specification PIN-004. Promotion and rollback MUST recreate both
   containers. Promoting one dataset MUST NOT require re-selecting the others.
 - **TXN-012:** An object-storage deployment MUST read each pinned release
   directly from `<release-storage-prefix>/<release-id>/` through GDAL's
@@ -1159,6 +1163,14 @@ expiration. See the Amazon S3 documentation for
 [Lifecycle actions and incomplete multipart uploads](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intro-lifecycle-rules.html).
 
 ### 14.4 Durable orchestration
+
+> **Not implemented (2026-10-07).** The v1 implementation skipped this section
+> entirely: there is no release request record, request ID, completion record,
+> orchestration reference (MAN-009 is optional and omitted), or AT-035 harness.
+> Builds run through the direct command-line runner. Nothing outside this section
+> depends on it; a multi-dataset invocation still builds independent releases
+> under MIG-003. Revisit this section, and decide whether to keep it, before any
+> workflow engine is adopted.
 
 The publication protocol is independent of its orchestrator. A CLI or Make
 target may execute it initially; a durable workflow engine may later coordinate
@@ -1391,9 +1403,8 @@ The example below uses PaleoCAR v3's real grid — EPSG:4269 at 0.008333°, orig
 (-114.995833, 42.995833), 1440 by 1560 — with the source-preserving `UInt32`
 encoding (COG-016) rather than the `UInt16` the current COGs carry. Fixtures
 will be built from this example, so its grid, extent, and axis agree with each
-other: the bbox is the outer edge of the grid. Whether the source rasters are
-registered to pixel corners or centres (GDAL `AREA_OR_POINT`) still needs
-checking against the source. Values that await scientific review are marked as
+other: the bbox is the outer edge of the grid, because the PaleoCAR v3 sources
+are registered to pixel areas (`AREA_OR_POINT=Area`, checked 2026-10-07). Values that await scientific review are marked as
 examples in place: the calendar and timestep semantics come from the creator's
 answers recorded in `curated.yml` (Section 20.2), not from this document.
 
@@ -1987,3 +1998,98 @@ written by its creator or steward, with or without the release author's help.
 | What numerical precision must a release preserve? | State acceptable absolute or relative error, significant digits if relevant, and whether exact integer preservation is required. | Governs any later per-variable encoding optimization. |
 | What does each band timestamp represent? | State the calendar, timestamp precision, time origin, interval or instant meaning, aggregation period, and endpoint inclusion rule. | Establishes the reviewed temporal axis and prevents band labels from defining scientific semantics accidentally. |
 | Are the twelve canonical quantities and identifiers complete and correctly named? | Approve the Section 18.1 list or return a corrected mapping from source directory to canonical identifier and display name. | Confirms that operational source discovery did not substitute for scientific inventory review. |
+
+### 20.3 Provisional resolutions (2026-10-07)
+
+The first implementation needed an answer to every decision above and to the
+gaps found while drafting the release workflow. The answers below are
+**provisional**: the implementation follows them, and each remains open to
+review under Section 20.1. Changing one that affects bytes or the declaration
+requires a new release.
+
+Encoding and layout:
+
+- Temporal chunk size 100; `INTERLEAVE=BAND`; `BLOCKSIZE=512`;
+  `COMPRESS=ZSTD` with `LEVEL=9`; `PREDICTOR=2` for integer and `3` for
+  floating-point data; `OVERVIEWS=IGNORE_EXISTING`; `STATISTICS=YES`;
+  `BIGTIFF=IF_SAFER`; `SPARSE_OK=FALSE`. EXP-002, EXP-003, and EXP-004 have not
+  been run; their results supersede these values.
+- Overview resampling is `AVERAGE` for continuous variables and `MODE` for
+  categorical variables.
+- Output encoding preserves the source datatype, nodata, scale, and offset; no
+  `UInt16` override is approved.
+- Grid tolerance (OBS-003): source CRSs MUST be equivalent and shapes identical;
+  each origin coordinate MAY differ by at most 0.001 pixel, and each pixel size
+  by an amount that accumulates to at most 0.001 pixel across the grid. The
+  canonical grid is that of the first variable in identifier order.
+- Unknown categories are preserved with a SKOPE-004 warning; dataset `status` is
+  dropped.
+
+Identity and reproducibility:
+
+- Source checksums: preflight computes any checksum the source manifest omits.
+  The resolved manifest is not written back; its checksums are recorded in the
+  release manifest's `sources`, so the committed source manifest and the
+  release manifest together reproduce it. Authors SHOULD commit checksums.
+- Release identifiers are recorded in a version-controlled ledger beside each
+  dataset's authoring files, `releases.yml`, mapping each assigned release ID to
+  its declaration digest. A build receives the release ID as an argument and
+  MUST refuse an ID whose ledger entry records a different digest, and a new ID
+  for a date that already has one unless it carries the next `-N`. Approval of a
+  declaration is the reviewed commit of its `release.created` value together
+  with its ledger entry.
+- A producer or toolchain change that alters output bytes requires a new
+  `release.created` value, and therefore a new declaration, digest, and release
+  ID. Two release IDs never share a declaration digest.
+- A `StaticRasterDataset`'s `release` block omits `chunk_size`.
+- A release found to be wrong after publication is never pinned. Its ledger
+  entry records `withdrawn` with a reason, and its ID is not reused.
+- Reproducibility is checked on demand, by rebuilding a published release into
+  scratch and byte-comparing every file, and in CI against a synthetic fixture.
+- The producer revision is the git commit of the skope-api checkout; a release
+  build MUST refuse a checkout with uncommitted changes. The GDAL image is pinned
+  by digest and Python dependencies by lock file.
+- The declaration projection (MAN-010) is the object
+  `{identity_profile, curated, source_manifest}`, where `curated` is the
+  validated `curated.yml` with defaults applied and its variables keyed by
+  identifier, and `source_manifest` is the resolved source manifest with every
+  source checksum.
+
+Serialization and schemas:
+
+- The authoring, manifest, and overview schemas are generated from the
+  implementation's typed models and committed; a test requires the committed
+  files to equal the generated ones. The SKOPE extension schema is maintained
+  by hand.
+- The pinned STAC and extension schemas are vendored into the repository so
+  validation runs offline (VAL-005).
+- Checksums use the SHA-256 multihash form; the declaration digest is plain
+  hexadecimal.
+
+Content:
+
+- A regular annual axis is proleptic Gregorian at year precision, and each
+  timestep is a calendar-year aggregation period. An Item's `start_datetime` is
+  the first instant of its first year and its `end_datetime` the last second of
+  its last year, both inclusive.
+- WGS 84 footprints are computed by transforming the grid's corner coordinates;
+  a geographic source grid's edges follow parallels and meridians, so the
+  corners suffice.
+- STAC band statistics copy the embedded COG statistics. Recomputed statistics
+  MUST match minimum and maximum exactly, mean and standard deviation to a
+  relative 1e-10, and valid percent to 0.005, the precision GDAL serializes.
+- The PaleoCAR v3 prototype release contains two of the twelve MIG-009
+  variables and is not a production release. MIG-009 governs the Phase 9
+  migration.
+
+Operations:
+
+- Builds stage under `<release-root>/.staging/`; readers ignore dot-prefixed
+  directories (TXN-003).
+- Object-storage verification reads each uploaded object back and compares its
+  SHA-256, because multipart ETags are not content checksums (OBS-011).
+- The operational audit store (TXN-017) is a directory of JSON records outside
+  the release root. A cleanup authorization is a JSON record naming the
+  operator, time, mechanism, reason, and a grace period of at least 24 hours.
+- The published catalog is generated from a version-controlled listing file and
+  a base URL supplied at generation time; where it is hosted remains open.
