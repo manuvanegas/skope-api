@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from osgeo import gdal
 
-from skope_release.cog_writer import cog_creation_options, write_cogs
+from skope_release.cog_writer import cog_creation_options, conversion_parallelism, write_cogs
 from skope_release.findings import Report
 from skope_release.plan import Producer, StateError
 from skope_release.preflight import DatasetFiles, preflight_dataset
@@ -59,6 +59,20 @@ def test_creation_options_come_from_the_declaration(temporal_dataset):
     options = cog_creation_options(plan, plan.variables[0])
     assert {"BLOCKSIZE=256", "COMPRESS=ZSTD", "LEVEL=9", "INTERLEAVE=BAND", "STATISTICS=YES", "SPARSE_OK=FALSE"} <= set(options)
     assert "OVERVIEW_RESAMPLING=AVERAGE" in options and "PREDICTOR=2" in options
+
+
+@pytest.mark.parametrize(
+    ("cpus", "override", "expected"),
+    [
+        (8, None, (1, 8)),  # one at a time, with every core
+        (32, "", (1, 32)),
+        (32, "4", (4, 8)),  # SKOPE_RELEASE_WORKERS shares the cores
+        (8, "3", (3, 2)),
+        (2, "4", (4, 1)),  # at least one thread each
+    ],
+)
+def test_conversion_parallelism(cpus, override, expected):
+    assert conversion_parallelism(cpus, override) == expected
 
 
 def test_the_writer_takes_only_a_plan(tmp_path):

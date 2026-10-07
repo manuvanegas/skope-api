@@ -5,6 +5,10 @@ distributed to one band-interleaved scratch GeoTIFF per chunk. Each scratch file
 is then converted to a COG. This reads a pixel-interleaved source once rather
 than once per chunk. Scratch files live beside the staging directory and are
 removed as soon as their COG is written.
+
+Chunks convert one at a time, each using every core, unless
+SKOPE_RELEASE_WORKERS asks for more at once (`conversion_parallelism`). The
+thread count does not change the output bytes.
 """
 
 from __future__ import annotations
@@ -41,7 +45,6 @@ def cog_creation_options(plan: ValidatedBuildPlan, variable: PlannedVariable) ->
         "STATISTICS=YES",
         f"BIGTIFF={cog.bigtiff}",
         "SPARSE_OK=FALSE",
-        "NUM_THREADS=ALL_CPUS",
     ]
     if cog.level is not None:
         options.append(f"LEVEL={cog.level}")
@@ -100,9 +103,10 @@ def _encode(block, variable: PlannedVariable):
     return out
 
 
-def _to_cog(scratch: Path, target: Path, options: list[str]) -> None:
+def _to_cog(scratch: Path, target: Path, options: list[str], threads: int) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    gdal.Translate(str(target), str(scratch), format="COG", creationOptions=options)
+    # NUM_THREADS is operational, not declared: the bytes are the same for any value.
+    gdal.Translate(str(target), str(scratch), format="COG", creationOptions=[*options, f"NUM_THREADS={threads}"])
 
 
 def write_temporal_variable(plan: ValidatedBuildPlan, variable: PlannedVariable, staging: Path, scratch_dir: Path) -> list[Path]:
@@ -135,9 +139,11 @@ def write_temporal_variable(plan: ValidatedBuildPlan, variable: PlannedVariable,
         scratches.clear()
     options = cog_creation_options(plan, variable)
     jobs = [(path, staging / layout.cog_path(variable.id, chunk)) for chunk, path in enumerate(scratch_paths)]
-    # Chunks are independent, so they convert in parallel; bytes do not depend on the order.
-    with ProcessPoolExecutor(max_workers=workers(), mp_context=multiprocessing.get_context("spawn")) as pool:
-        futures = {pool.submit(_convert, str(scratch), str(target), options): target for scratch, target in jobs}
+    # Chunks are independent, so they may convert in parallel; bytes do not depend on the order.
+    parallel, threads = conversion_parallelism(_cpu_count(), os.environ.get("SKOPE_RELEASE_WORKERS"))
+    log.info("%s: converting %d chunks, %d at a time with %d threads each", variable.id, len(jobs), parallel, threads)
+    with ProcessPoolExecutor(max_workers=parallel, mp_context=multiprocessing.get_context("spawn")) as pool:
+        futures = {pool.submit(_convert, str(scratch), str(target), options, threads): target for scratch, target in jobs}
         for future in as_completed(futures):
             future.result()
             log.info("wrote %s", futures[future].relative_to(staging))
@@ -151,9 +157,30 @@ def workers() -> int:
     return max(1, int(os.environ.get("SKOPE_RELEASE_WORKERS", "4")))
 
 
-def _convert(scratch: str, target: str, options: list[str]) -> None:
+def conversion_parallelism(cpus: int, override: str | None) -> tuple[int, int]:
+    """How many COG conversions run at once, and the threads each one gets.
+
+    One at a time by default. Measured 2026-10-07 on 100-band PaleoCAR chunks
+    in Docker Desktop's 8-core VM: one conversion took 30 s with 8 threads;
+    splitting the cores across 4 or 8 conversions at once was at most 14%
+    faster and took nearly all the VM's memory (about 1 GiB each).
+    `override` (SKOPE_RELEASE_WORKERS) runs that many at once, sharing the
+    cores, for a machine where that was measured to help.
+    """
+    parallel = max(1, int(override)) if override else 1
+    return parallel, max(1, cpus // parallel)
+
+
+def _cpu_count() -> int:
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:  # not Linux
+        return os.cpu_count() or 1
+
+
+def _convert(scratch: str, target: str, options: list[str], threads: int) -> None:
     gdalio.configure()
-    _to_cog(Path(scratch), Path(target), options)
+    _to_cog(Path(scratch), Path(target), options, threads)
 
 
 def write_static_variable(plan: ValidatedBuildPlan, variable: PlannedVariable, staging: Path, scratch_dir: Path) -> list[Path]:
@@ -168,7 +195,7 @@ def write_static_variable(plan: ValidatedBuildPlan, variable: PlannedVariable, s
             scratch.GetRasterBand(1).WriteArray(_encode(band.ReadAsArray(0, y, src.RasterXSize, height), variable), 0, y)
         scratch.Close()
     target = staging / "cogs" / f"{variable.id}.tif"  # ORG-009
-    _to_cog(path, target, cog_creation_options(plan, variable))
+    _to_cog(path, target, cog_creation_options(plan, variable), _cpu_count())
     path.unlink()
     return [target]
 
