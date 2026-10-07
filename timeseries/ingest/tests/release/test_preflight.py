@@ -1,0 +1,140 @@
+"""Source preflight (AT-007, AT-009, AT-022; OBS-001 to OBS-011, COG-007, COG-013 to COG-016, META-004)."""
+
+import numpy as np
+import pytest
+import yaml
+from osgeo import gdal
+
+from skope_release.findings import Report
+from skope_release.plan import Producer
+from skope_release.preflight import DatasetFiles, preflight_dataset
+
+from release_fixtures import write_source, years
+
+PRODUCER = Producer("p", "0", "abc")
+
+
+def run(directory, release_id=None):
+    report = Report()
+    plan = preflight_dataset(DatasetFiles(directory), release_id=release_id, mirror=None, producer=PRODUCER, report=report)
+    return plan, report
+
+
+def requirements(report):
+    return {f.requirement for f in report.errors}
+
+
+def edit(directory, name, change):
+    path = directory / name
+    data = yaml.safe_load(path.read_text())
+    change(data)
+    path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
+
+
+def test_good_dataset_passes(temporal_dataset):
+    plan, report = run(temporal_dataset(), "synth-r-2026.10.07")
+    assert plan is not None, report.to_text()
+    assert plan.layout.chunk_count == 3
+    assert all(v.source_checksum.startswith("1220") for v in plan.variables)
+
+
+def test_variable_sets_must_match(temporal_dataset):
+    directory = temporal_dataset()
+    edit(directory, "curated.yml", lambda d: d["variables"].pop())
+    assert "OBS-001" in requirements(run(directory)[1])
+
+
+def test_band_descriptions_must_match_the_axis(temporal_dataset, tmp_path):
+    directory = temporal_dataset()
+    write_source(tmp_path / "sources" / "alpha.tif", ["0100", "0101", "0103", "0102", "0104"])
+    assert "OBS-006" in requirements(run(directory)[1])
+
+
+def test_band_count_must_match_the_axis(temporal_dataset):
+    directory = temporal_dataset()
+    edit(directory, "curated.yml", lambda d: d["temporal"].update(end="0105"))
+    assert "OBS-005" in requirements(run(directory)[1])
+
+
+def test_axis_must_reach_its_end(temporal_dataset):
+    directory = temporal_dataset()
+    edit(directory, "curated.yml", lambda d: d["temporal"].update(step="P3Y"))
+    assert "OBS-004" in requirements(run(directory)[1])
+
+
+def test_declared_checksum_must_match(temporal_dataset):
+    directory = temporal_dataset()
+    edit(directory, "source-manifest.yml", lambda d: d["variables"][0]["source"].update(checksum="1220" + "0" * 64))
+    assert "OBS-011" in requirements(run(directory)[1])
+
+
+def test_encoding_must_preserve_the_source(temporal_dataset):
+    directory = temporal_dataset()
+    edit(directory, "source-manifest.yml", lambda d: d["variables"][0]["encoding"].update(data_type="uint16", nodata=65535))
+    assert "COG-016" in requirements(run(directory)[1])
+    directory = temporal_dataset(dataset_id="other")
+    edit(directory, "source-manifest.yml", lambda d: d["variables"][0]["encoding"].update(nodata=0))
+    assert "COG-016" in requirements(run(directory)[1])
+
+
+def test_approved_narrowing_is_scanned(temporal_dataset, tmp_path):
+    """COG-014: a narrowing passes only when every valid value fits."""
+    narrow = {"data_type": "uint16", "nodata": 65535, "narrowing": {"approved_by": "review", "evidence": "EXP-004"}}
+    directory = temporal_dataset()
+    edit(directory, "source-manifest.yml", lambda d: [v["encoding"].update(narrow) for v in d["variables"]])
+    plan, report = run(directory)
+    assert plan is not None, report.to_text()
+
+    big = tmp_path / "sources" / "alpha.tif"
+    ds = gdal.Open(str(big), gdal.GA_Update)
+    data = ds.GetRasterBand(2).ReadAsArray()
+    data[10, 10] = 70000
+    ds.GetRasterBand(2).WriteArray(data)
+    ds = None
+    edit(directory, "source-manifest.yml", lambda d: None)
+    assert "COG-014" in requirements(run(directory)[1])
+
+
+def test_grids_must_align(temporal_dataset, tmp_path):
+    """OBS-003 with the Section 20.3 tolerance."""
+    keys = years(100, 5)
+    directory = temporal_dataset()
+    write_source(tmp_path / "sources" / "beta.tif", keys, geotransform=(-115.0 + 0.01 * 0.0005, 0.01, 0.0, 43.0, 0.0, -0.01))
+    plan, report = run(directory)
+    assert plan is not None, report.to_text()  # within 0.001 pixel
+    write_source(tmp_path / "sources" / "beta.tif", keys, geotransform=(-115.0 + 0.01 * 0.5, 0.01, 0.0, 43.0, 0.0, -0.01))
+    assert "OBS-003" in requirements(run(directory)[1])
+    write_source(tmp_path / "sources" / "beta.tif", keys, epsg=4326)
+    assert "OBS-003" in requirements(run(directory)[1])
+
+
+def test_categorical_variables_need_category_preserving_overviews(temporal_dataset):
+    categories = {0: "Outside", 1: "Inside"}
+    directory = temporal_dataset(
+        variables=("niche",),
+        source_kwargs={"niche": {"dtype": gdal.GDT_Byte, "nodata": 255, "categories": categories}},
+        manifest={"data_type": "uint8", "nodata": 255},
+    )
+    edit(directory, "curated.yml", lambda d: d["variables"][0].update(categories=categories))
+    assert "COG-007" in requirements(run(directory)[1])
+    edit(directory, "source-manifest.yml", lambda d: d["variables"][0]["encoding"].update(overview_resampling="MODE"))
+    plan, report = run(directory)
+    assert plan is not None, report.to_text()
+
+
+def test_nodata_must_be_representable(temporal_dataset):
+    directory = temporal_dataset()
+    edit(directory, "source-manifest.yml", lambda d: d["variables"][0]["encoding"].update(nodata=-1))
+    assert "OBS-008" in requirements(run(directory)[1])
+
+
+def test_unreadable_source_is_reported(temporal_dataset):
+    directory = temporal_dataset()
+    edit(directory, "source-manifest.yml", lambda d: d["variables"][0]["source"].update(uri="/missing.tif"))
+    assert "OBS-002" in requirements(run(directory)[1])
+
+
+def test_static_rules(static_dataset):
+    directory = static_dataset()
+    edit(directory, "source-manifest.yml", lambda d: d["release"].update(chunk_size=10))
+    assert "META-004" in requirements(run(directory)[1])

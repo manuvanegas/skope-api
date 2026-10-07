@@ -1,0 +1,123 @@
+"""GDAL access shared by preflight, the COG writer, and byte inspection."""
+
+from __future__ import annotations
+
+import hashlib
+import os
+from pathlib import Path
+from urllib.parse import urlparse
+
+from osgeo import gdal, osr
+
+gdal.UseExceptions()
+osr.UseExceptions()
+
+GDAL_TO_STAC_TYPE = {
+    gdal.GDT_Byte: "uint8",
+    gdal.GDT_Int8: "int8",
+    gdal.GDT_UInt16: "uint16",
+    gdal.GDT_Int16: "int16",
+    gdal.GDT_UInt32: "uint32",
+    gdal.GDT_Int32: "int32",
+    gdal.GDT_Float32: "float32",
+    gdal.GDT_Float64: "float64",
+}
+STAC_TO_GDAL_TYPE = {v: k for k, v in GDAL_TO_STAC_TYPE.items()}
+INTEGER_RANGES = {
+    "uint8": (0, 2**8 - 1),
+    "int8": (-(2**7), 2**7 - 1),
+    "uint16": (0, 2**16 - 1),
+    "int16": (-(2**15), 2**15 - 1),
+    "uint32": (0, 2**32 - 1),
+    "int32": (-(2**31), 2**31 - 1),
+}
+
+_CHUNK = 8 * 1024 * 1024
+
+
+def configure() -> None:
+    """Process-wide GDAL settings for release builds."""
+    # No PAM sidecars: statistics must live in the COG itself (COG-005).
+    gdal.SetConfigOption("GDAL_PAM_ENABLED", "NO")
+    gdal.SetConfigOption("GDAL_CACHEMAX", "512")
+    gdal.SetConfigOption("GDAL_NUM_THREADS", "ALL_CPUS")
+
+
+def gdal_version() -> str:
+    return gdal.__version__
+
+
+def read_path(uri: str, mirror: Path | None) -> str:
+    """Where GDAL reads a source URI. A mirror holds `<bucket>/<key>` copies.
+
+    The read path is operational and never part of the declaration; the
+    source checksum proves the mirror copy is the declared object.
+    """
+    parsed = urlparse(uri)
+    if parsed.scheme == "s3":
+        if mirror is not None:
+            local = mirror / parsed.netloc / parsed.path.lstrip("/")
+            if local.is_file():
+                return str(local)
+        return f"/vsis3/{parsed.netloc}{parsed.path}"
+    if parsed.scheme in {"http", "https"}:
+        return f"/vsicurl/{uri}"
+    if parsed.scheme in {"", "file"}:
+        return parsed.path if parsed.scheme == "file" else uri
+    raise ValueError(f"unsupported source URI scheme: {uri}")
+
+
+def sha256_multihash(path: str | os.PathLike) -> str:
+    """Stream a local or `/vsi` path and return its SHA-256 multihash (OBS-011)."""
+    digest = hashlib.sha256()
+    path = str(path)
+    if path.startswith("/vsi"):
+        handle = gdal.VSIFOpenL(path, "rb")
+        if handle is None:
+            raise OSError(f"cannot open {path}")
+        try:
+            while True:
+                block = gdal.VSIFReadL(1, _CHUNK, handle)
+                if not block:
+                    break
+                digest.update(block)
+        finally:
+            gdal.VSIFCloseL(handle)
+    else:
+        with open(path, "rb") as handle:
+            for block in iter(lambda: handle.read(_CHUNK), b""):
+                digest.update(block)
+    return "1220" + digest.hexdigest()
+
+
+def crs_code(srs: osr.SpatialReference) -> str | None:
+    srs = srs.Clone()
+    srs.AutoIdentifyEPSG()
+    authority, code = srs.GetAuthorityName(None), srs.GetAuthorityCode(None)
+    return f"{authority}:{code}" if authority and code else None
+
+
+def wgs84_bbox(srs_wkt: str, geotransform, width: int, height: int) -> tuple[float, float, float, float]:
+    """WGS 84 bbox of the grid's outer edge, from its corners (Section 20.3)."""
+    src = osr.SpatialReference()
+    src.ImportFromWkt(srs_wkt)
+    src.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    dst = osr.SpatialReference()
+    dst.ImportFromEPSG(4326)
+    dst.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    transform = osr.CoordinateTransformation(src, dst)
+    gt = geotransform
+    corners = [
+        (gt[0] + gt[1] * px + gt[2] * py, gt[3] + gt[4] * px + gt[5] * py)
+        for px, py in ((0, 0), (width, 0), (0, height), (width, height))
+    ]
+    points = [transform.TransformPoint(x, y)[:2] for x, y in corners]
+    xs, ys = [p[0] for p in points], [p[1] for p in points]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def same_crs(wkt_a: str, wkt_b: str) -> bool:
+    a, b = osr.SpatialReference(), osr.SpatialReference()
+    a.ImportFromWkt(wkt_a)
+    b.ImportFromWkt(wkt_b)
+    return bool(a.IsSame(b))

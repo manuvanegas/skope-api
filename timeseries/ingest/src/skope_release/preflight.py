@@ -1,0 +1,358 @@
+"""Source preflight: validate a declaration and every source before any output.
+
+Produces a frozen `ValidatedBuildPlan` (OBS-012) or findings. It creates no
+release or scratch output (VAL-004). Requirements: META-001 to META-005,
+META-008, OBS-001 to OBS-006, OBS-008, OBS-009, OBS-011, COG-007, COG-013,
+COG-014, COG-016, REL-006, MAN-010, MAN-011, VAL-003.
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+from osgeo import gdal
+
+from . import gdalio
+from .documents import load_document
+from .findings import Report
+from .identity import check_release_id, declaration_digest, declaration_projection, load_ledger
+from .models import Curated, SourceManifest
+from .plan import _PLAN_ISSUER, Grid, PlannedVariable, Producer, ValidatedBuildPlan
+from .timeaxis import Axis, AxisError, ChunkLayout
+
+GRID_TOLERANCE_PX = 1e-3  # Section 20.3
+CATEGORY_PRESERVING = {"MODE", "NEAREST"}
+
+
+@dataclass(frozen=True)
+class DatasetFiles:
+    directory: Path
+
+    @property
+    def dataset_id(self) -> str:
+        return self.directory.name
+
+    @property
+    def curated(self) -> Path:
+        return self.directory / "curated.yml"
+
+    @property
+    def source_manifest(self) -> Path:
+        return self.directory / "source-manifest.yml"
+
+    @property
+    def ledger(self) -> Path:
+        return self.directory / "releases.yml"
+
+
+@dataclass
+class _SourceFacts:
+    read_path: str
+    wkt: str
+    geotransform: tuple
+    width: int
+    height: int
+    band_count: int
+    data_type: str
+    nodata: float | None
+    scale: float
+    offset: float
+    descriptions: list[str]
+    area_or_point: str
+
+
+def _inspect_source(read_path: str) -> _SourceFacts:
+    with gdal.Open(read_path) as ds:
+        first = ds.GetRasterBand(1)
+        types = {ds.GetRasterBand(i).DataType for i in range(1, ds.RasterCount + 1)}
+        if len(types) != 1:
+            raise ValueError("bands have mixed datatypes")
+        nodatas = {ds.GetRasterBand(i).GetNoDataValue() for i in range(1, ds.RasterCount + 1)}
+        if len(nodatas) != 1:
+            raise ValueError("bands have different nodata values")
+        scales = {(ds.GetRasterBand(i).GetScale() or 1.0, ds.GetRasterBand(i).GetOffset() or 0.0) for i in range(1, ds.RasterCount + 1)}
+        if len(scales) != 1:
+            raise ValueError("bands have different scale/offset")
+        scale, offset = scales.pop()
+        return _SourceFacts(
+            read_path=read_path,
+            wkt=ds.GetProjection(),
+            geotransform=tuple(ds.GetGeoTransform()),
+            width=ds.RasterXSize,
+            height=ds.RasterYSize,
+            band_count=ds.RasterCount,
+            data_type=gdalio.GDAL_TO_STAC_TYPE.get(first.DataType, gdal.GetDataTypeName(first.DataType)),
+            nodata=nodatas.pop(),
+            scale=scale,
+            offset=offset,
+            descriptions=[ds.GetRasterBand(i).GetDescription() for i in range(1, ds.RasterCount + 1)],
+            area_or_point=ds.GetMetadataItem("AREA_OR_POINT") or "Area",
+        )
+
+
+def _grid_differs(a: _SourceFacts, b: _SourceFacts) -> str | None:
+    """OBS-003 with the Section 20.3 tolerance, or None when equivalent."""
+    if not gdalio.same_crs(a.wkt, b.wkt):
+        return "CRS differs"
+    if (a.width, a.height) != (b.width, b.height):
+        return f"shape {b.height}x{b.width} differs from {a.height}x{a.width}"
+    if a.area_or_point != b.area_or_point:
+        return f"AREA_OR_POINT {b.area_or_point} differs from {a.area_or_point}"
+    ga, gb = a.geotransform, b.geotransform
+    px, py = abs(ga[1]), abs(ga[5])
+    if abs(ga[0] - gb[0]) > GRID_TOLERANCE_PX * px or abs(ga[3] - gb[3]) > GRID_TOLERANCE_PX * py:
+        return "origin differs by more than 0.001 pixel"
+    extent = max(a.width, a.height)
+    for i, size in ((1, px), (2, px), (4, py), (5, py)):
+        if abs(ga[i] - gb[i]) * extent > GRID_TOLERANCE_PX * size:
+            return "pixel size or rotation differs by more than 0.001 pixel across the grid"
+    return None
+
+
+def _same_number(a, b) -> bool:
+    if a is None or b is None:
+        return a is None and b is None
+    if isinstance(a, float) and math.isnan(a):
+        return isinstance(b, float) and math.isnan(b)
+    return float(a) == float(b)
+
+
+def _scan_narrowing(read_path: str, band_count: int, source_nodata, target: str, target_nodata) -> str | None:
+    """COG-014: every valid source value must be representable in the target type."""
+    lo, hi = gdalio.INTEGER_RANGES.get(target, (-math.inf, math.inf))
+    with gdal.Open(read_path) as ds:
+        for b in range(1, band_count + 1):
+            band = ds.GetRasterBand(b)
+            for y in range(0, ds.RasterYSize, 512):
+                rows = min(512, ds.RasterYSize - y)
+                block = band.ReadAsArray(0, y, ds.RasterXSize, rows)
+                valid = block if source_nodata is None else block[block != source_nodata]
+                if valid.size == 0:
+                    continue
+                if np.issubdtype(block.dtype, np.floating) and target in gdalio.INTEGER_RANGES:
+                    if not np.all(np.isfinite(valid)) or not np.all(np.equal(np.mod(valid, 1), 0)):
+                        return f"band {b} holds non-integral values"
+                vmin, vmax = valid.min(), valid.max()
+                if vmin < lo or vmax > hi:
+                    return f"band {b} value range [{vmin}, {vmax}] overflows {target}"
+                if target_nodata is not None and np.any(valid == target_nodata):
+                    return f"band {b} has valid values equal to the target nodata {target_nodata}"
+    return None
+
+
+def preflight_dataset(
+    files: DatasetFiles,
+    *,
+    release_id: str | None,
+    mirror: Path | None,
+    producer: Producer,
+    report: Report,
+) -> ValidatedBuildPlan | None:
+    ds = files.dataset_id
+    ctx = {"dataset": ds}
+    start_errors = len(report.errors)
+
+    curated = load_document(Curated, files.curated, requirement="META-001", report=report, **ctx)
+    manifest = load_document(SourceManifest, files.source_manifest, requirement="META-004", report=report, **ctx)
+    if curated is None or manifest is None:
+        return None
+    if curated.id != ds:
+        report.add("META-001", f"curated id {curated.id!r} does not match its directory {ds!r}", path=str(files.curated), **ctx)
+    if manifest.dataset != ds:
+        report.add("META-004", f"source manifest dataset {manifest.dataset!r} does not match {ds!r}", path=str(files.source_manifest), **ctx)
+
+    # OBS-001: identical variable sets.
+    curated_ids = {v.id for v in curated.variables}
+    manifest_ids = {v.id for v in manifest.variables}
+    for missing in sorted(curated_ids - manifest_ids):
+        report.add("OBS-001", "curated variable has no source", variable=missing, **ctx)
+    for extra in sorted(manifest_ids - curated_ids):
+        report.add("OBS-001", "source variable is not curated", variable=extra, **ctx)
+
+    temporal = curated.profile == "TemporalCubeDataset"
+    axis: Axis | None = None
+    if temporal:
+        t = curated.temporal
+        try:
+            axis = Axis.regular(t.origin, t.step, t.end, t.precision) if t.step else Axis.enumerated(t.values, t.precision)
+        except AxisError as exc:
+            report.add("OBS-004", str(exc), path=str(files.curated), **ctx)
+        if manifest.release.chunk_size is None:
+            report.add("META-004", "a temporal dataset's release block needs chunk_size", path=str(files.source_manifest), **ctx)
+    elif manifest.release.chunk_size is not None:
+        report.add("META-004", "a static dataset's release block omits chunk_size (Section 20.3)", path=str(files.source_manifest), **ctx)
+
+    curated_by_id = {v.id: v for v in curated.variables}
+    facts: dict[str, _SourceFacts] = {}
+    checksums: dict[str, str] = {}
+    for var in sorted(manifest.variables, key=lambda v: v.id):
+        vctx = {**ctx, "variable": var.id}
+        enc, src = var.encoding, var.source
+        if temporal and src.bands != "descriptions":
+            report.add("META-008", "a temporal source maps bands to the axis by description (`bands: descriptions`)", **vctx)
+        if not temporal and src.band is None:
+            report.add("META-004", "a static source names its band (`band: N`)", **vctx)
+
+        # Encoding sanity (OBS-008, OBS-009, COG-007).
+        if not (math.isfinite(enc.scale) and math.isfinite(enc.offset)) or enc.scale == 0:
+            report.add("OBS-009", "scale and offset must be finite and scale non-zero", **vctx)
+        if enc.nodata is not None and enc.data_type in gdalio.INTEGER_RANGES:
+            lo, hi = gdalio.INTEGER_RANGES[enc.data_type]
+            if not (isinstance(enc.nodata, int) or float(enc.nodata).is_integer()) or not lo <= enc.nodata <= hi:
+                report.add("OBS-008", f"nodata {enc.nodata} is not representable as {enc.data_type}", **vctx)
+        categorical = var.id in curated_by_id and curated_by_id[var.id].categories is not None
+        if categorical and enc.overview_resampling not in CATEGORY_PRESERVING:
+            report.add("COG-007", f"categorical variable uses {enc.overview_resampling}; use MODE or NEAREST", **vctx)
+        if not categorical and enc.overview_resampling in {"MODE"}:
+            report.warn("COG-007", "continuous variable uses MODE overview resampling", **vctx)
+        if categorical and enc.nodata is not None and int(enc.nodata) in curated_by_id[var.id].categories:
+            report.add("OBS-008", "nodata collides with a declared category value", **vctx)
+        expected_predictor = 3 if enc.data_type.startswith("float") else 2
+        if enc.predictor not in (1, expected_predictor):
+            report.add("COG-013", f"predictor {enc.predictor} does not suit {enc.data_type}", **vctx)
+
+        try:
+            path = gdalio.read_path(src.uri, mirror)
+            fact = _inspect_source(path)
+        except Exception as exc:  # noqa: BLE001 - every source failure becomes a finding (OBS-002)
+            report.add("OBS-002", f"cannot inspect source {src.uri}: {exc}", **vctx)
+            continue
+        facts[var.id] = fact
+
+        # COG-016: preserve the source encoding unless a narrowing is approved.
+        if enc.data_type != fact.data_type:
+            if enc.narrowing is None:
+                report.add("COG-016", f"output data_type {enc.data_type} differs from source {fact.data_type} without an approved narrowing", **vctx)
+            else:
+                problem = _scan_narrowing(path, fact.band_count, fact.nodata, enc.data_type, enc.nodata)
+                if problem:
+                    report.add("COG-014", problem, **vctx)
+        if not _same_number(enc.nodata, fact.nodata) and enc.narrowing is None:
+            report.add("COG-016", f"output nodata {enc.nodata} differs from source nodata {fact.nodata}", **vctx)
+        if not (_same_number(enc.scale, fact.scale) and _same_number(enc.offset, fact.offset)):
+            report.add("COG-016", f"output scale/offset ({enc.scale}, {enc.offset}) differ from the source's ({fact.scale}, {fact.offset})", **vctx)
+
+        # OBS-005 / OBS-006: band count and descriptions against the reviewed axis.
+        if temporal and axis is not None:
+            if fact.band_count != axis.count:
+                report.add("OBS-005", f"source has {fact.band_count} bands; the axis has {axis.count} timesteps", **vctx)
+            expected = axis.keys()
+            for i, (got, want) in enumerate(zip(fact.descriptions, expected), start=1):
+                if got != want:
+                    report.add("OBS-006", f"band description {got!r} should be {want!r}", band=i, **vctx)
+                    break
+            dupes = len(fact.descriptions) - len(set(fact.descriptions))
+            if dupes:
+                report.add("OBS-006", f"{dupes} duplicate band descriptions", **vctx)
+        elif not temporal and src.band is not None and src.band > fact.band_count:
+            report.add("OBS-005", f"band {src.band} does not exist; the source has {fact.band_count}", **vctx)
+
+        # OBS-011 / META-004: checksum every source.
+        try:
+            measured = gdalio.sha256_multihash(path)
+        except OSError as exc:
+            report.add("OBS-011", f"cannot checksum source: {exc}", **vctx)
+            continue
+        if src.checksum is not None and src.checksum != measured:
+            report.add("OBS-011", f"declared checksum {src.checksum} does not match the source bytes ({measured})", **vctx)
+        checksums[var.id] = measured
+
+    # OBS-003: one canonical grid, the first variable's in identifier order.
+    grid: Grid | None = None
+    if facts:
+        canonical_id = sorted(facts)[0]
+        canonical = facts[canonical_id]
+        for vid, fact in sorted(facts.items()):
+            problem = _grid_differs(canonical, fact)
+            if problem:
+                report.add("OBS-003", f"{problem} relative to {canonical_id}", dataset=ds, variable=vid)
+        from osgeo import osr
+
+        srs = osr.SpatialReference()
+        srs.ImportFromWkt(canonical.wkt)
+        code = gdalio.crs_code(srs)
+        if code is None:
+            report.add("STAC-007", "the source CRS has no authority code for proj:code", **ctx)
+        grid = Grid(
+            crs_wkt=canonical.wkt,
+            crs_code=code or "",
+            width=canonical.width,
+            height=canonical.height,
+            geotransform=canonical.geotransform,
+            area_or_point=canonical.area_or_point,
+        )
+
+    if len(report.errors) > start_errors:
+        return None
+
+    # The resolved manifest carries every checksum (META-004); it is frozen from here.
+    resolved = manifest.model_copy(
+        update={
+            "variables": [
+                v.model_copy(update={"source": v.source.model_copy(update={"checksum": checksums[v.id]})})
+                for v in manifest.variables
+            ]
+        }
+    )
+    digest = declaration_digest(declaration_projection(curated, resolved))
+
+    if release_id is not None:
+        ledger = load_ledger(files.ledger, report)
+        check_release_id(
+            release_id, dataset_id=ds, created=manifest.release.created, digest=digest, ledger=ledger, report=report
+        )
+    if len(report.errors) > start_errors:
+        return None
+
+    planned = tuple(
+        PlannedVariable(
+            id=v.id,
+            curated=curated_by_id[v.id],
+            encoding=v.encoding,
+            source_uri=v.source.uri,
+            source_read_path=facts[v.id].read_path,
+            source_checksum=checksums[v.id],
+            source_band=v.source.band,
+            source_band_count=facts[v.id].band_count,
+            source_nodata=facts[v.id].nodata,
+        )
+        for v in sorted(resolved.variables, key=lambda v: v.id)
+    )
+    layout = ChunkLayout(ds, axis, manifest.release.chunk_size) if temporal else None
+    return ValidatedBuildPlan(
+        release_id=release_id or "",
+        curated=curated,
+        resolved_manifest=resolved,
+        declaration_digest=digest,
+        grid=grid,
+        axis=axis,
+        layout=layout,
+        variables=planned,
+        producer=producer,
+        _issuer=_PLAN_ISSUER,
+    )
+
+
+def preflight_many(
+    directories: list[Path],
+    *,
+    release_ids: dict[str, str | None],
+    mirror: Path | None,
+    producer: Producer,
+) -> tuple[dict[str, ValidatedBuildPlan], dict[str, Report]]:
+    """MIG-003: preflight every requested dataset before any transformation."""
+    plans: dict[str, ValidatedBuildPlan] = {}
+    reports: dict[str, Report] = {}
+    for directory in directories:
+        files = DatasetFiles(directory)
+        report = Report()
+        plan = preflight_dataset(
+            files, release_id=release_ids.get(files.dataset_id), mirror=mirror, producer=producer, report=report
+        )
+        reports[files.dataset_id] = report
+        if plan is not None and report.ok:
+            plans[files.dataset_id] = plan
+    return plans, reports
