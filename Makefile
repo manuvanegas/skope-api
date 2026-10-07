@@ -14,7 +14,7 @@ TEST_COMPOSE = docker compose --project-name $(COMPOSE_PROJECT_NAME)-test \
 	-f deploy/compose/dev.yml
 
 .PHONY: help check-environment check-dataset-release prepare config build deploy \
-	deploy-dev deploy-staging deploy-production down restart logs ps ingest \
+	deploy-dev deploy-staging deploy-production down restart logs ps ingest release \
 	preflight-legacy-data migrate-legacy-data test test-api test-ingest
 
 # Make 'help' the default target if someone just types `make`
@@ -88,6 +88,17 @@ ps: check-environment ##- Show service status for the selected environment
 ingest: prepare ##- Build and run the local COG/STAC ingest pipeline container
 	$(COMPOSE) --profile ingest build ingest
 	$(COMPOSE) --profile ingest run --rm ingest
+
+RELEASE_ROOT ?= ./timeseries/ingest/output/releases
+RELEASE_AUDIT_ROOT ?= ./timeseries/ingest/output/audit
+RELEASE_SOURCE_MIRROR ?= ./cog-input
+export RELEASE_ROOT RELEASE_AUDIT_ROOT RELEASE_SOURCE_MIRROR
+
+release: prepare ##- Run the dataset release tool, e.g. make release ARGS="preflight paleocar_v3"
+	@mkdir -p "$(RELEASE_ROOT)" "$(RELEASE_AUDIT_ROOT)"
+	@$(COMPOSE) --profile ingest build release
+	PRODUCER_REVISION="$$(git rev-parse HEAD)$$(test -z "$$(git status --porcelain)" || echo -dirty)" \
+		$(COMPOSE) --profile ingest run --rm release $(ARGS)
 
 preflight-legacy-data: ##- Validate all legacy migration inputs without creating output
 	MIGRATION_PREFLIGHT_ONLY=true ./scripts/migrate-legacy-datasets.sh \

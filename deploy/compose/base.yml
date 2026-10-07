@@ -77,6 +77,32 @@ services:
       - ./cog-input:/data
       - ./timeseries/ingest/output:/output
 
+  release:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.ingest
+      target: runtime
+    image: openskope/skope-api-ingest:latest
+    profiles:
+      - ingest
+    entrypoint: ["skope-release"]
+    environment:
+      AWS_NO_SIGN_REQUEST: YES
+      CPL_VSIL_CURL_ALLOWED_EXTENSIONS: .tif,.tiff
+      GDAL_DISABLE_READDIR_ON_OPEN: EMPTY_DIR
+      PRODUCER_REVISION: ${PRODUCER_REVISION:-unknown}
+      SKOPE_RELEASE_DATASETS: /ingest/datasets
+      SKOPE_RELEASE_SOURCE_MIRROR: /sources
+      SKOPE_RELEASE_ROOT: /releases
+      SKOPE_RELEASE_AUDIT_ROOT: /audit
+      SKOPE_RELEASE_PINS: /ingest/deploy/releases
+    volumes:
+      - ./timeseries/ingest/datasets:/ingest/datasets:ro
+      - ./deploy:/ingest/deploy:ro
+      - ${RELEASE_SOURCE_MIRROR:-./cog-input}:/sources:ro
+      - ${RELEASE_ROOT:-./timeseries/ingest/output/releases}:/releases
+      - ${RELEASE_AUDIT_ROOT:-./timeseries/ingest/output/audit}:/audit
+
   ingest-test:
     build:
       context: .
