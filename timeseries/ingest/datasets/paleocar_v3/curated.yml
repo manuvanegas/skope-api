@@ -71,6 +71,12 @@ temporal:
   description: >-
     Each timestep is one calendar year (January–December) CE; its value
     aggregates that year.
+empty_timesteps:
+  - first: "0417"
+    last: "0589"
+    reason: >-
+      PaleoCAR v3 has no reconstruction for these years: too few tree-ring
+      chronologies are available (see the lineage).
 variables:
   - id: "gdd_cotton_annual"
     title: "Annual (Jan–Dec) Cotton Growing Degree Days"
