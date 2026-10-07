@@ -6,7 +6,6 @@ from fastapi import (
     Depends,
     HTTPException,
     Path,
-    Query,
     Request,
 )
 from fastapi.responses import StreamingResponse
@@ -24,7 +23,6 @@ from app.store.jobs import JobStore, get_job_store
 from app.core.validation import (
     validate_dataset_and_variable,
     validate_geom_size,
-    validate_tile_style,
 )
 from app.core.job_control import ExtractionJobController, get_job_controller
 from app.core.tiles import stream_tile
@@ -86,17 +84,10 @@ async def get_map_tile(
     z: int = Path(...),
     x: int = Path(...),
     y: int = Path(...),
-    colormap: str | None = Query(
-        None, max_length=64, description="Optional color palette override"
-    ),
-    rescale: str = Query(
-        "0,100",
-        max_length=64,
-        description="min,max data values to map to the colormap",
-    ),
 ) -> StreamingResponse:
     """
-    Lightweight endpoint to proxy XYZ tile requests to the internal streaming service.
+    Proxies one XYZ tile of one timestep to the internal tile server, drawn
+    with the variable's display palette and range.
     """
     app_state = request.app.state
     try:
@@ -116,16 +107,12 @@ async def get_map_tile(
     except UnknownTimestep as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    requested_colormap = colormap.strip() if colormap else ""
-    effective_colormap = (
-        "viridis"
-        if requested_colormap.lower() in {"", "undefined", "null"}
-        else requested_colormap
-    )
-    try:
-        effective_colormap, rescale = validate_tile_style(effective_colormap, rescale)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    # One display range serves the tile and the legend, unchanged (DISP-004),
+    # so the client doesn't choose the palette or the rescale.
+    display = app_state.display.variable(dataset_id, variable_id)
+    rescale = None
+    if display.range is not None:
+        rescale = ",".join(f"{endpoint:g}" for endpoint in display.range)
 
     return await stream_tile(
         app_state=app_state,
@@ -134,7 +121,7 @@ async def get_map_tile(
         z=z,
         x=x,
         y=y,
-        colormap=effective_colormap,
+        colormap=display.palette,
         rescale=rescale,
     )
 

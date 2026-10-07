@@ -34,6 +34,36 @@ SINGLE_CELL_POLYGON = {
 }
 
 
+DISPLAY = """
+datasets:
+  test_annual:
+    order: 10
+    variables:
+      ppt: {order: 10, palette: skope-precip, range: [0, 4.5]}
+  test_monthly:
+    order: 20
+    default_variable: ppt
+    variables:
+      ppt: {order: 10, palette: skope-precip, range: [1, 60]}
+"""
+PALETTES = """
+skope-precip:
+  kind: ramp
+  colors: ["#B5834A", "#358C87"]
+"""
+
+
+def write_display(tmp_path, monkeypatch, preferences=DISPLAY):
+    (tmp_path / "preferences.yml").write_text(preferences)
+    (tmp_path / "palettes.yml").write_text(PALETTES)
+    monkeypatch.setattr(
+        app.main.settings, "display_preferences_path", str(tmp_path / "preferences.yml")
+    )
+    monkeypatch.setattr(
+        app.main.settings, "display_palettes_path", str(tmp_path / "palettes.yml")
+    )
+
+
 @pytest.fixture
 def job_store(tmp_path):
     store_dir = tmp_path / "jobs"
@@ -61,6 +91,7 @@ def pipeline_client(monkeypatch, tmp_path, job_store):
     pin = write_pin(tmp_path / "releases.yml", root, releases)
     monkeypatch.setattr(app.main.settings, "release_pin_path", str(pin))
     monkeypatch.setattr(app.main.settings, "release_root", str(root))
+    write_display(tmp_path, monkeypatch)
 
     fastapi_app.dependency_overrides[get_job_store] = lambda: job_store
 

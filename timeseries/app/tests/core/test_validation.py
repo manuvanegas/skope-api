@@ -5,7 +5,6 @@ from app.core.validation import (
     estimate_cell_count,
     validate_dataset_and_variable,
     validate_geom_size,
-    validate_tile_style,
 )
 
 # ---------------------------------------------------------------------------
@@ -26,29 +25,6 @@ def test_validate_dataset_and_variable_unknown_dataset(served_registry):
 def test_validate_dataset_and_variable_unknown_variable(served_registry):
     with pytest.raises(ValueError, match="no-such-var"):
         validate_dataset_and_variable(served_registry, "annual", "no-such-var")
-
-
-# ---------------------------------------------------------------------------
-# validate_tile_style
-
-
-def test_validate_tile_style_normalizes_numeric_range():
-    assert validate_tile_style("viridis", "0.0,100.00") == ("viridis", "0,100")
-
-
-@pytest.mark.parametrize(
-    "colormap,rescale",
-    [
-        ("../viridis", "0,100"),
-        ("viridis", "0"),
-        ("viridis", "nan,100"),
-        ("viridis", "100,0"),
-        ("viridis", "0,0"),
-    ],
-)
-def test_validate_tile_style_rejects_invalid_values(colormap, rescale):
-    with pytest.raises(ValueError):
-        validate_tile_style(colormap, rescale)
 
 
 # ---------------------------------------------------------------------------

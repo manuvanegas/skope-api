@@ -17,7 +17,7 @@ async def stream_tile(
     x: int,
     y: int,
     colormap: str,
-    rescale: str,
+    rescale: str | None,
 ) -> StreamingResponse:
     """
     Requests one band of one COG from the internal tile server and streams the
@@ -31,8 +31,9 @@ async def stream_tile(
         "url": cog_path,
         "bidx": band,
         "colormap_name": colormap,
-        "rescale": rescale,
     }
+    if rescale is not None:
+        params["rescale"] = rescale
 
     try:
         request = app_state.client.build_request(

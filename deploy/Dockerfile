@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir \
 COPY deploy/logging/${ENVIRONMENT}.yml /code/config/logging.yml
 COPY deploy/settings/${ENVIRONMENT}.yml /code/config/app_settings.yml
 COPY deploy/releases/${ENVIRONMENT}.yml /code/config/releases.yml
+COPY deploy/display /code/config/display
 
 COPY timeseries/app /code/app
 

@@ -8,5 +8,6 @@ services:
       - ./timeseries/app:/code/app
       - ./deploy/settings/dev.yml:/code/config/app_settings.yml:ro
       - ./deploy/releases/dev.yml:/code/config/releases.yml:ro
+      - ./deploy/display:/code/config/display:ro
     ports:
       - "127.0.0.1:8001:8000"

@@ -1,0 +1,36 @@
+# How each dataset and variable is shown (release consumption spec Section 4.1).
+# Shared by every environment; entries for datasets an environment doesn't pin
+# are allowed. Palettes are defined in palettes.yml.
+#
+# Every range is a visualization range in physical units, used unchanged for
+# both the tile rescale and the legend (DISP-004). It is not an observed range
+# and not a valid range.
+
+defaults:
+  ticks: 5
+  nodata: transparent
+
+datasets:
+  paleocar_v3:
+    order: 10
+    map_view:
+      center: { lon: -108.5, lat: 37.0 }
+      zoom: 4
+    default_variable: ppt_annual
+    variables:
+      ppt_annual:
+        order: 10
+        palette: skope-precip
+        range: [0, 1807.5]
+        note: >-
+          Provisional: half the legacy registry's maximum for the
+          prediction_scaled product (3615 mm), carried over from the UI's
+          COLOR_MAX_PCT of 0.5.
+      gdd_cotton_annual:
+        order: 20
+        palette: skope-precip
+        range: [0, 2177.5]
+        note: >-
+          Provisional: half the legacy registry's maximum for the
+          prediction_scaled product (4355 °F GDD), carried over from the UI's
+          COLOR_MAX_PCT of 0.5.

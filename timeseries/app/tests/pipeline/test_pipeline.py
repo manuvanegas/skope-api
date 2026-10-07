@@ -34,6 +34,17 @@ def test_settings_endpoint_is_not_exposed(pipeline_client):
 # Helpers
 
 
+def _capture_tile(monkeypatch):
+    captured = {}
+
+    async def fake_stream_tile(**kwargs):
+        captured.update(kwargs)
+        return Response(content=b"tile", media_type="image/png")
+
+    monkeypatch.setattr("app.routers.v3.api.stream_tile", fake_stream_tile)
+    return captured
+
+
 def _extract_payload(dataset_id: str, gte: str, lte: str, **overrides) -> dict:
     payload = {
         "dataset_id": dataset_id,
@@ -80,38 +91,15 @@ def _get_status(client, job_id: str) -> dict:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("query", ["", "?colormap=undefined"])
-def test_tile_uses_registry_colormap_when_override_is_absent_or_invalid(
-    pipeline_client, monkeypatch, query
-):
-    captured = {}
-
-    async def fake_stream_tile(**kwargs):
-        captured.update(kwargs)
-        return Response(content=b"tile", media_type="image/png")
-
-    monkeypatch.setattr("app.routers.v3.api.stream_tile", fake_stream_tile)
+@pytest.mark.parametrize("query", ["", "?colormap=magma&rescale=0,1"])
+def test_tile_uses_the_display_palette_and_range(pipeline_client, monkeypatch, query):
+    captured = _capture_tile(monkeypatch)
 
     response = pipeline_client.get(f"/tiles/test_annual/ppt/0001/0/0/0{query}")
 
     assert response.status_code == 200
-    assert captured["colormap"] == "viridis"
-
-
-@pytest.mark.integration
-@pytest.mark.parametrize(
-    "query",
-    [
-        "?colormap=../viridis",
-        "?rescale=0",
-        "?rescale=nan,100",
-        "?rescale=100,0",
-    ],
-)
-def test_tile_rejects_invalid_style_parameters(pipeline_client, query):
-    response = pipeline_client.get(f"/tiles/test_annual/ppt/0001/0/0/0{query}")
-
-    assert response.status_code == 422
+    assert captured["colormap"] == "skope-precip"
+    assert captured["rescale"] == "0,4.5"
 
 
 # ---------------------------------------------------------------------------
@@ -300,17 +288,6 @@ async def test_analyze_failed_job_returns_409(pipeline_client, job_store):
 # Releases: tiles by canonical key, ranges, startup refusal
 
 
-def _capture_tile(monkeypatch):
-    captured = {}
-
-    async def fake_stream_tile(**kwargs):
-        captured.update(kwargs)
-        return Response(content=b"tile", media_type="image/png")
-
-    monkeypatch.setattr("app.routers.v3.api.stream_tile", fake_stream_tile)
-    return captured
-
-
 @pytest.mark.integration
 @pytest.mark.parametrize(
     "path, cog, band",
@@ -421,3 +398,24 @@ def test_api_refuses_to_start_on_a_wrong_pin(tmp_path, monkeypatch):
     with pytest.raises(ReleaseRefused):
         with TestClient(fastapi_app):
             pass
+
+
+@pytest.mark.integration
+def test_api_refuses_to_start_without_a_display_entry(tmp_path, monkeypatch):
+    import app.main
+    from app.main import app as fastapi_app
+    from app.registry.compose import ReleaseRefused
+    from app.tests.pipeline.conftest import DISPLAY, GRID, _cube, write_display
+    from app.tests.release_builder import build_release, write_pin
+
+    root = tmp_path / "releases"
+    pinned = build_release(root, "test_extra", {"ppt": _cube(2)}, transform=GRID)
+    pin = write_pin(tmp_path / "releases.yml", root, [pinned])
+    monkeypatch.setattr(app.main.settings, "release_pin_path", str(pin))
+    monkeypatch.setattr(app.main.settings, "release_root", str(root))
+    write_display(tmp_path, monkeypatch, DISPLAY)
+
+    with pytest.raises(ReleaseRefused) as exc_info:
+        with TestClient(fastapi_app):
+            pass
+    assert [r.requirement for r in exc_info.value.refusals] == ["DISP-001"]

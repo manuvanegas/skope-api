@@ -13,11 +13,13 @@ from contextlib import asynccontextmanager
 from app.config import get_settings
 from app.exceptions import TimeseriesValidationError
 from app.registry.compose import (
+    Refusal,
     ReleaseRefused,
     load_pin,
     log_refusals,
     verify_releases,
 )
+from app.registry.display import DisplayFileError, check_display, load_display
 from app.store.jobs import cleanup_stale_jobs, create_job_store
 from app.routers.v3 import api as v3_api
 
@@ -26,14 +28,26 @@ logger = logging.getLogger(__name__)
 
 
 def compose_registry():
-    """Check the pinned releases and compose the registry (PIN-004).
+    """Check the pinned releases and the display files, and compose the registry.
 
-    On any failed check, log each failure and raise, so the process exits
-    instead of serving some datasets.
+    On any failed check (PIN-004, DISP-012, DISP-013), log each failure and
+    raise, so the process exits instead of serving some datasets.
     """
     pin = load_pin(Path(settings.release_pin_path))
     try:
         registry = verify_releases(pin, Path(settings.release_root))
+        try:
+            preferences, palettes = load_display(
+                Path(settings.display_preferences_path),
+                Path(settings.display_palettes_path),
+            )
+        except DisplayFileError as exc:
+            raise ReleaseRefused(
+                [Refusal("DISP-012", "-", "-", "display files are valid", "valid", exc)]
+            ) from exc
+        refusals = check_display(registry, preferences, palettes)
+        if refusals:
+            raise ReleaseRefused(refusals)
     except ReleaseRefused as exc:
         log_refusals(exc.refusals)
         raise
@@ -41,7 +55,7 @@ def compose_registry():
         "Serving %s",
         ", ".join(r.overview.release_id for r in registry.releases.values()),
     )
-    return registry
+    return registry, preferences, palettes
 
 
 @asynccontextmanager
@@ -56,7 +70,11 @@ async def lifespan(app: FastAPI):
     )
     job_store = create_job_store(settings.redis_url)
     try:
-        app.state.registry = compose_registry()
+        (
+            app.state.registry,
+            app.state.display,
+            app.state.palettes,
+        ) = compose_registry()
         await job_store.healthcheck()
         app.state.client = async_client
         app.state.job_store = job_store

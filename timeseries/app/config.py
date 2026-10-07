@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # The pin file and where the pin's release_root is mounted (PIN-001).
     release_pin_path: str = "config/releases.yml"
     release_root: str = "/releases"
+    # How datasets are shown (release consumption spec Section 4).
+    display_preferences_path: str = "config/display/preferences.yml"
+    display_palettes_path: str = "config/display/palettes.yml"
 
     model_config = SettingsConfigDict(yaml_file="config/app_settings.yml")
 
