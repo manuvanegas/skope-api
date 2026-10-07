@@ -1,0 +1,10 @@
+# The release set this environment serves (release consumption spec PIN-001).
+# Copy each release to release_root on the host, then run
+# `make verify-releases ENVIRONMENT=staging` before deploying.
+release_root: /srv/datasets/releases
+releases:
+  # Prototype: 2 of the 12 variables, provisional encoding. Not for production.
+  - dataset: paleocar_v3
+    release_id: paleocar_v3-r-2026.10.07
+    declaration_digest: fa5b29a944289e7677f1bff46216a2222f20f5eb73d7237e9d453e0c2e1f059e
+    manifest_sha256: b2f29d873f9aec2c1ca4c4e5872b19b39c004a4da57337ae76a4f9647914098c

@@ -8,12 +8,19 @@ COMPOSE = docker compose --project-name $(COMPOSE_PROJECT_NAME) \
 	--project-directory . \
 	-f deploy/compose/base.yml \
 	-f deploy/compose/$(ENVIRONMENT).yml
-TEST_COMPOSE = docker compose --project-name $(COMPOSE_PROJECT_NAME)-test \
+# PIN-001: the API and TiTiler mount the release root the environment's pin
+# names, resolved to its physical path (release spec TXN-011).
+PIN_FILE = deploy/releases/$(ENVIRONMENT).yml
+SKOPE_RELEASE_ROOT = $(shell scripts/release-root.sh $(PIN_FILE) 2>/dev/null)
+export SKOPE_RELEASE_ROOT
+# Tests build their own releases, so their containers mount a fixture directory.
+TEST_COMPOSE = SKOPE_RELEASE_ROOT=$(CURDIR)/timeseries/app/tests/registry/data \
+	docker compose --project-name $(COMPOSE_PROJECT_NAME)-test \
 	--project-directory . \
 	-f deploy/compose/base.yml \
 	-f deploy/compose/dev.yml
 
-.PHONY: help check-environment check-dataset-release prepare config build deploy \
+.PHONY: help check-environment check-dataset-release check-release-pin prepare config build deploy \
 	deploy-dev deploy-staging deploy-production down restart logs ps ingest release \
 	preflight-legacy-data migrate-legacy-data test test-api test-ingest
 
@@ -32,7 +39,7 @@ check-environment:
 	esac
 
 prepare: check-environment
-	@if [ "$(ENVIRONMENT)" = dev ]; then mkdir -p cog-input timeseries/ingest/output; fi
+	@if [ "$(ENVIRONMENT)" = dev ]; then mkdir -p cog-input timeseries/ingest/output/releases; fi
 
 check-dataset-release: check-environment
 	@if [ "$(ENVIRONMENT)" != dev ]; then \
@@ -54,6 +61,9 @@ check-dataset-release: check-environment
 	  }; \
 	fi
 
+check-release-pin: check-environment
+	@scripts/release-root.sh $(PIN_FILE) >/dev/null
+
 config: check-environment ##- Render and validate the selected Compose configuration
 	@$(COMPOSE) config
 
@@ -61,7 +71,7 @@ build: prepare ##- Build the selected environment's images
 	@$(COMPOSE) config --quiet
 	$(COMPOSE) build --pull
 
-deploy: check-dataset-release build ##- Deploy ENVIRONMENT (defaults to dev) and wait for healthy services
+deploy: check-dataset-release check-release-pin build ##- Deploy ENVIRONMENT (defaults to dev) and wait for healthy services
 	$(COMPOSE) up -d --remove-orphans --force-recreate --wait --wait-timeout 120
 
 deploy-dev: override ENVIRONMENT=dev

@@ -9,6 +9,7 @@ services:
       - ./timeseries/metadata.yml:/code/metadata.yml:ro
       - ./cog-input:/data:ro
       - ./deploy/settings/dev.yml:/code/config/app_settings.yml:ro
+      - ./deploy/releases/dev.yml:/code/config/releases.yml:ro
       - ./deploy/colormaps/custom.json:/code/config/colormaps.json:ro
     ports:
       - "127.0.0.1:8001:8000"
