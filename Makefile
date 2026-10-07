@@ -122,11 +122,13 @@ test: test-api test-ingest ##- Run all API and ingest tests
 
 test-api: override ENVIRONMENT=dev
 test-api: prepare ##- Build the development image and run the API tests
+	@cmp -s timeseries/ingest/src/skope_release/timeaxis.py timeseries/app/vendor/timeaxis.py || \
+		{ echo "timeseries/app/vendor/timeaxis.py differs from the release build's; copy it again" 1>&2; exit 1; }
 	@$(TEST_COMPOSE) config --quiet
 	$(TEST_COMPOSE) build server titiler
 	@trap '$(TEST_COMPOSE) down --remove-orphans' EXIT INT TERM; \
 		$(TEST_COMPOSE) run --rm server sh -c \
-		'black --check app && pytest -c app/pytest.ini app/tests'
+		'black --check --extend-exclude "app/vendor/" app && pytest -c app/pytest.ini app/tests'
 
 test-ingest: override ENVIRONMENT=dev
 test-ingest: prepare ##- Build and run the ingest tests
