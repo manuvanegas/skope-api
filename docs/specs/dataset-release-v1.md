@@ -427,8 +427,9 @@ records why they are not combined into a single aggregate artifact.
     instant or an aggregation period.
 
   It MAY also contain citations and DOIs, contacts, method summaries,
-  uncertainty explanations, valid ranges, persistent identifiers, and a
-  category for each variable. A required field MUST NOT be recorded as unknown;
+  uncertainty explanations, valid ranges, persistent identifiers, a
+  category for each variable, and, for a temporal dataset, its empty timesteps
+  (OBS-007). A required field MUST NOT be recorded as unknown;
   a product whose required meaning is unknown is left out of the release.
   Curated files MUST NOT contain presentation choices, which live in the display
   files (release consumption specification).
@@ -643,7 +644,8 @@ reviewed specification change and compatibility fixtures.
   every band of a temporal cube asset and therefore MUST be serialized once on
   the **asset**, not repeated per band. Each core STAC Band object MUST carry
   only the properties that genuinely differ per band: its `name` (STAC-011) and
-  its native encoded `statistics`. A band MAY override an inherited asset
+  its native encoded `statistics`. A declared empty band (OBS-007) has only
+  `statistics: {valid_percent: 0}`. A band MAY override an inherited asset
   property only when its value actually differs, following STAC 1.1 band
   property inheritance. See the
   [Raster 2.0.0 extension](https://github.com/stac-extensions/raster) and
@@ -812,7 +814,14 @@ serialized files and their measured sizes and checksums.
   or band semantics.
 - **OBS-007:** Every modeled statistic MUST be finite and MUST state its scope.
   A band with no valid pixels MUST fail unless the curated dataset policy
-  explicitly permits and represents that condition.
+  explicitly permits and represents that condition. For a temporal dataset that
+  policy is `empty_timesteps` in `curated.yml`: an ordered list of
+  non-overlapping inclusive runs of axis timesteps, each with a reason, as in
+  `{first: "0417", last: "0589", reason: "..."}`; a single timestep has
+  `first` equal to `last`. The declaration MUST match the source bytes exactly
+  in every variable: an undeclared band with no valid pixels and a declared band
+  with any valid pixel both fail. Source preflight MUST check this before any
+  output is written. A static band with no valid pixels always fails.
 - **OBS-008:** Nodata MUST be representable by the output datatype, MUST NOT
   collide with a valid encoded value, and MUST remain consistent with mask,
   scale, and offset semantics.
