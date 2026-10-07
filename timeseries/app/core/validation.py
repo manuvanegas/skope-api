@@ -11,6 +11,8 @@ from shapely.ops import transform as transform_geometry
 from shapely.geometry import Point as ShapelyPoint
 from shapely.geometry.base import BaseGeometry
 
+from app.registry.compose import AppRegistry, ServedRelease
+
 COLORMAP_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 # ---------------------------------------------------------------------------
@@ -18,22 +20,20 @@ COLORMAP_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 def validate_dataset_and_variable(
-    registry: dict, dataset_id: str, variable_id: str
-) -> None:
+    registry: AppRegistry, dataset_id: str, variable_id: str
+) -> ServedRelease:
     """
     Validates dataset and variable existence to prevent arbitrary or malicious queries.
-    Raises ValueError if the IDs are not found in the registry.
+    Returns the dataset's release; raises ValueError if either ID is not served.
     """
-    dataset = registry.get(dataset_id)
-    if not dataset:
+    release = registry.get(dataset_id)
+    if release is None:
         raise ValueError(f"Dataset '{dataset_id}' not found.")
-
-    variables = dataset.get("variables", [])
-
-    if not any(var.get("id") == variable_id for var in variables):
+    if not release.has_variable(variable_id):
         raise ValueError(
             f"Variable '{variable_id}' not found in dataset '{dataset_id}'."
         )
+    return release
 
 
 def validate_tile_style(colormap: str, rescale: str) -> tuple[str, str]:
@@ -94,17 +94,18 @@ def estimate_cell_count(
 
 
 def validate_geom_size(
-    shapes: list[BaseGeometry], dataset_entry: dict, max_cells: int
+    shapes: list[BaseGeometry],
+    transform: Sequence[float],
+    dataset_crs: str,
+    max_cells: int,
 ) -> None:
     """
-    Validates that the geometry does not exceed a maximum number of cells when rasterized.
-    Accepts a list of Shapely geometries and a registry dataset entry (with 'crs' and 'transform').
-    Raises ValueError if the geometry is too large.
+    Validates that the geometry does not exceed a maximum number of cells when rasterized
+    on the dataset's grid. Raises ValueError if the geometry is too large.
     """
     if all(isinstance(s, ShapelyPoint) for s in shapes):
         return  # A point is exactly 1 cell — always within limits
-    transform = dataset_entry["transform"]
-    estimated_cells = estimate_cell_count(shapes, transform, dataset_entry["crs"])
+    estimated_cells = estimate_cell_count(shapes, transform, dataset_crs)
 
     if estimated_cells > max_cells:
         raise ValueError(

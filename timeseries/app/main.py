@@ -1,4 +1,6 @@
 import logging
+from pathlib import Path
+
 import httpx
 import sentry_sdk
 from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
@@ -10,13 +12,36 @@ from contextlib import asynccontextmanager
 
 from app.config import get_settings
 from app.exceptions import TimeseriesValidationError
+from app.registry.compose import (
+    ReleaseRefused,
+    load_pin,
+    log_refusals,
+    verify_releases,
+)
 from app.store.jobs import cleanup_stale_jobs, create_job_store
-from app.store.data_reader import get_data_reader
-from app.store.index_loaders import load_registry, resolve_colormaps
 from app.routers.v3 import api as v3_api
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+
+def compose_registry():
+    """Check the pinned releases and compose the registry (PIN-004).
+
+    On any failed check, log each failure and raise, so the process exits
+    instead of serving some datasets.
+    """
+    pin = load_pin(Path(settings.release_pin_path))
+    try:
+        registry = verify_releases(pin, Path(settings.release_root))
+    except ReleaseRefused as exc:
+        log_refusals(exc.refusals)
+        raise
+    logger.info(
+        "Serving %s",
+        ", ".join(r.overview.release_id for r in registry.releases.values()),
+    )
+    return registry
 
 
 @asynccontextmanager
@@ -31,18 +56,10 @@ async def lifespan(app: FastAPI):
     )
     job_store = create_job_store(settings.redis_url)
     try:
+        app.state.registry = compose_registry()
         await job_store.healthcheck()
         app.state.client = async_client
         app.state.job_store = job_store
-        app.state.global_registry = load_registry(settings.registry_path)
-        app.state.data_reader = get_data_reader(settings.storage_base_url)
-
-        await resolve_colormaps(
-            app.state.global_registry,
-            settings.colormaps_path,
-            async_client,
-            settings.tile_server_url,
-        )
 
         yield
     finally:

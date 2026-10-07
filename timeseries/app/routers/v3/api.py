@@ -12,7 +12,14 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 
 from app.config import get_settings
-from app.schemas.timeseries import TimeseriesAnalyzeRequest, TimeseriesRequest
+from app.registry.compose import normalize_key
+from app.schemas.timeseries import (
+    TimeRange,
+    TimeseriesAnalyzeRequest,
+    TimeseriesRequest,
+    ZScoreFixedInterval,
+)
+from app.vendor.timeaxis import MalformedTimestep, UnknownTimestep
 from app.store.jobs import JobStore, get_job_store
 from app.core.validation import (
     validate_dataset_and_variable,
@@ -30,21 +37,52 @@ settings = get_settings()
 router = APIRouter()
 
 
+_PRECISION_BY_LENGTH = {4: "year", 7: "month", 10: "day", 20: "datetime"}
+
+
+def _normalized(time_range: TimeRange | None, precision: str) -> TimeRange | None:
+    """Bring a request's range to the dataset's precision (PROTO-009: 422 if it can't be)."""
+    if time_range is None:
+        return None
+    try:
+        return TimeRange(
+            gte=normalize_key(time_range.gte, precision),
+            lte=normalize_key(time_range.lte, precision),
+        )
+    except MalformedTimestep as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _with_normalized_ranges(payload, precision: str):
+    """The payload with its time range and z-score reference range normalized."""
+    update = {"time_range": _normalized(payload.time_range, precision)}
+    if isinstance(payload.transform, ZScoreFixedInterval):
+        update["transform"] = payload.transform.model_copy(
+            update={"time_range": _normalized(payload.transform.time_range, precision)}
+        )
+    return payload.model_copy(update=update)
+
+
 # Metadata
 @router.get("/metadata")
 async def get_global_index(request: Request):
-    """Returns the Global Registry."""
-    registry_dict = request.app.state.global_registry
-    return list(registry_dict.values())
+    """Returns the overview of every served release."""
+    registry = request.app.state.registry
+    return [
+        release.overview.model_dump(mode="json")
+        for release in registry.releases.values()
+    ]
 
 
 # Tile streaming
-@router.get("/tiles/{dataset_id}/{variable_id}/{year}/{z}/{x}/{y}")
+@router.get("/tiles/{dataset_id}/{variable_id}/{timestep}/{z}/{x}/{y}")
 async def get_map_tile(
     request: Request,
     dataset_id: str = Path(...),
     variable_id: str = Path(...),
-    year: str = Path(...),
+    timestep: str = Path(
+        ..., description="Canonical ISO timestep at the dataset's precision"
+    ),
     z: int = Path(...),
     x: int = Path(...),
     y: int = Path(...),
@@ -61,21 +99,26 @@ async def get_map_tile(
     Lightweight endpoint to proxy XYZ tile requests to the internal streaming service.
     """
     app_state = request.app.state
-    registry = app_state.global_registry
     try:
-        validate_dataset_and_variable(registry, dataset_id, variable_id)
+        release = validate_dataset_and_variable(
+            app_state.registry, dataset_id, variable_id
+        )
     except ValueError as e:
         logger.warning(f"Invalid request attempt: {e}")
         raise HTTPException(status_code=404, detail=str(e))
 
-    variable = next(
-        var
-        for var in registry[dataset_id].get("variables", [])
-        if var.get("id") == variable_id
-    )
+    # An exact lookup: a malformed key is 422, a key not on the axis is 404
+    # (PROTO-006, PROTO-009).
+    try:
+        cog_path, band = release.resolve(variable_id, timestep)
+    except MalformedTimestep as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except UnknownTimestep as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     requested_colormap = colormap.strip() if colormap else ""
     effective_colormap = (
-        variable.get("colormap", "viridis")
+        "viridis"
         if requested_colormap.lower() in {"", "undefined", "null"}
         else requested_colormap
     )
@@ -86,9 +129,8 @@ async def get_map_tile(
 
     return await stream_tile(
         app_state=app_state,
-        dataset_id=dataset_id,
-        variable_id=variable_id,
-        year=year,
+        cog_path=cog_path,
+        band=band,
         z=z,
         x=x,
         y=y,
@@ -107,23 +149,39 @@ async def create_timeseries_job(
     job_controller: ExtractionJobController = Depends(get_job_controller),
 ):
     # Validate dataset and variable IDs against the registry before accepting the job
-    registry = request.app.state.global_registry
     try:
-        validate_dataset_and_variable(registry, payload.dataset_id, payload.variable_id)
+        release = validate_dataset_and_variable(
+            request.app.state.registry, payload.dataset_id, payload.variable_id
+        )
     except ValueError as e:
         logger.warning(f"Invalid request attempt: {e}")
         raise HTTPException(status_code=404, detail=str(e))
 
-    # Pre-flight geometry size check using registry CRS/transform
-    dataset_entry = registry[payload.dataset_id]
+    # Pre-flight geometry size check on the dataset's grid
+    grid = release.overview.dataset.grid
     try:
         validate_geom_size(
             shapes=payload.selected_area.shapes,
-            dataset_entry=dataset_entry,
+            transform=grid.transform,
+            dataset_crs=grid.code,
             max_cells=settings.default_max_cells,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    # Select the timesteps now, so a range that selects nothing is a 422
+    # (PROTO-009) rather than a failed job. No range means the whole axis.
+    payload = _with_normalized_ranges(payload, release.axis.precision)
+    keys = release.axis.keys()
+    time_range = payload.time_range or TimeRange(gte=keys[0], lte=keys[-1])
+    file_mapping, timestep_list = release.select(
+        payload.variable_id, time_range.gte, time_range.lte
+    )
+    if not timestep_list:
+        raise HTTPException(
+            status_code=422,
+            detail=f"The time range [{time_range.gte}, {time_range.lte}] selects no timesteps.",
+        )
 
     if not job_controller.try_acquire():
         raise HTTPException(
@@ -141,8 +199,9 @@ async def create_timeseries_job(
             job_id=job_id,
             payload=payload,
             store=store,
-            registry=request.app.state.global_registry,
-            data_reader=request.app.state.data_reader,
+            release=release,
+            file_mapping=file_mapping,
+            timestep_list=timestep_list,
             job_controller=job_controller,
         )
     except Exception:
@@ -174,6 +233,9 @@ async def analyze_timeseries(
         raise HTTPException(
             status_code=422, detail="No base series found. Re-submit /extract."
         )
+    # Compare keys at the extraction's own precision, never as raw strings.
+    precision = _PRECISION_BY_LENGTH[len(base_data["timesteps"][0])]
+    payload = _with_normalized_ranges(payload, precision)
 
     try:
         return execute_analyze_request(
