@@ -1,4 +1,5 @@
 import logging
+import warnings
 import anyio
 import numpy as np
 import pandas as pd
@@ -120,8 +121,13 @@ def extract_summarystat_timeseries(
 
                     data[:, ~precomputed_mask] = np.nan
 
-                    mean_results.extend(np.nanmean(data, axis=(1, 2)))
-                    median_results.extend(np.nanmedian(data, axis=(1, 2)))
+                    # A timestep with no valid cell in the area (for example,
+                    # a year the dataset has no data for) yields NaN, which the
+                    # response carries as null. numpy warns about each one.
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", RuntimeWarning)
+                        mean_results.extend(np.nanmean(data, axis=(1, 2)))
+                        median_results.extend(np.nanmedian(data, axis=(1, 2)))
 
         return (file_uri, np.array(mean_results), np.array(median_results))
     except Exception as e:
@@ -168,10 +174,33 @@ def apply_zscore_transform(base_series: pd.Series, transform) -> pd.Series:
 def apply_temporal_transform(timeseries_data: pd.Series, smoother_config) -> pd.Series:
     if isinstance(smoother_config, MovingAverageSmoother):
         center = smoother_config.method == "centered"
-        return timeseries_data.rolling(
+        smoothed = timeseries_data.rolling(
             window=smoother_config.width, center=center, min_periods=1
         ).mean()
+        # Smoothing averages over the values a window has, but never fills in a
+        # timestep that has no value of its own.
+        return smoothed.where(timeseries_data.notna())
     return timeseries_data
+
+
+def _finite_or_none(value: float) -> float | None:
+    return float(value) if np.isfinite(value) else None
+
+
+def summarize_series(name: str, series: pd.Series) -> SummaryStat:
+    """Summary statistics over the timesteps that have a value.
+
+    Timesteps without a value are skipped. A statistic that can't be computed
+    (no values at all, or the standard deviation of a single value) is None,
+    never NaN, which is not valid JSON.
+    """
+    clean = series.dropna()
+    return SummaryStat(
+        name=name,
+        mean=_finite_or_none(clean.mean()),
+        median=_finite_or_none(clean.median()),
+        stdev=_finite_or_none(clean.std()),
+    )
 
 
 async def execute_timeseries_job(
@@ -227,6 +256,12 @@ async def execute_timeseries_job(
 
     full_mean = np.concatenate([res[1] for res in results])
     full_median = np.concatenate([res[2] for res in results])
+    # Values are labelled by position, so a count mismatch would silently shift
+    # every label after it. Fail instead.
+    if len(full_mean) != len(timestep_list) or len(full_median) != len(timestep_list):
+        raise RuntimeError(
+            f"Extracted {len(full_mean)} values for {len(timestep_list)} timesteps."
+        )
 
     # Time-indexed series — enables label-based slicing in apply_zscore_transform
     base_mean_series = pd.Series(full_mean, index=timestep_list)
@@ -245,7 +280,6 @@ async def execute_timeseries_job(
     summary_stats = []
     for option in request.requested_series_options:
         smoothed = apply_temporal_transform(transformed_series, option.smoother)
-        clean = smoothed.dropna()
         output_series_list.append(
             Series(
                 options=option,
@@ -264,14 +298,7 @@ async def execute_timeseries_job(
                 values=smoothed.replace({np.nan: None}).to_list(),
             )
         )
-        summary_stats.append(
-            SummaryStat(
-                name=option.name,
-                mean=float(clean.mean()) if len(clean) else None,
-                median=float(clean.median()) if len(clean) else None,
-                stdev=float(clean.std()) if len(clean) else None,
-            )
-        )
+        summary_stats.append(summarize_series(option.name, smoothed))
 
     timeseries_response = TimeseriesResponse(
         dataset_id=request.dataset_id,
@@ -301,9 +328,12 @@ def execute_analyze_request(
     Called synchronously by POST /v3/timeseries/analyze.
     """
     stat_key = payload.zonal_statistic.value  # "mean" or "median"
+    # dtype=float turns the stored nulls (timesteps without a value) into NaN,
+    # even when every stored value is null.
     full_base_series = pd.Series(
         base_series_payload[stat_key],
         index=base_series_payload["timesteps"],
+        dtype=float,
     )
 
     # Transform on the FULL extraction series so that:
@@ -329,7 +359,6 @@ def execute_analyze_request(
     summary_stats = []
     for option in payload.requested_series_options:
         smoothed = apply_temporal_transform(response_series, option.smoother)
-        clean = smoothed.dropna()
         output_series_list.append(
             Series(
                 options=option,
@@ -339,14 +368,7 @@ def execute_analyze_request(
                 values=smoothed.replace({np.nan: None}).to_list(),
             )
         )
-        summary_stats.append(
-            SummaryStat(
-                name=option.name,
-                mean=float(clean.mean()) if len(clean) else None,
-                median=float(clean.median()) if len(clean) else None,
-                stdev=float(clean.std()) if len(clean) else None,
-            )
-        )
+        summary_stats.append(summarize_series(option.name, smoothed))
 
     return TimeseriesResponse(
         dataset_id=extraction_metadata["dataset_id"],
