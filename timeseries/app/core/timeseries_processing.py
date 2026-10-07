@@ -295,6 +295,7 @@ async def execute_timeseries_job(
                         else request.time_range.lte
                     ),
                 },
+                timesteps=list(smoothed.index),
                 values=smoothed.replace({np.nan: None}).to_list(),
             )
         )
@@ -365,6 +366,7 @@ def execute_analyze_request(
                 time_range=TimeRange(
                     gte=response_series.index[0], lte=response_series.index[-1]
                 ),
+                timesteps=list(smoothed.index),
                 values=smoothed.replace({np.nan: None}).to_list(),
             )
         )

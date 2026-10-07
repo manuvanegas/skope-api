@@ -169,7 +169,16 @@ class SeriesOptions(BaseModel):
 class Series(BaseModel):
     options: SeriesOptions
     time_range: TimeRange
+    timesteps: List[str] = Field(
+        ..., description="The timestep of each value, in order (PROTO-007)"
+    )
     values: List[Optional[float]]
+
+    @model_validator(mode="after")
+    def one_timestep_per_value(self) -> Self:
+        if len(self.timesteps) != len(self.values):
+            raise ValueError("Every value needs exactly one timestep.")
+        return self
 
 
 class TimeseriesResponse(BaseModel):

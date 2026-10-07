@@ -206,6 +206,7 @@ async def test_extraction_returns_an_empty_band_as_null(raster_with_empty_band):
         response, base = await _extract(raster_with_empty_band, TIMESTEPS[:3])
 
     assert response.series[0].values == [10.0, None, 30.0]
+    assert response.series[0].timesteps == TIMESTEPS[:3]
     assert base["mean"] == [10.0, None, 30.0]
     assert base["median"] == [10.0, None, 30.0]
     assert response.summary_stats[0].mean == 20.0

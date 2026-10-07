@@ -163,3 +163,26 @@ def test_timeseries_request_limits_geometry_coordinates(monkeypatch):
 
     with pytest.raises(ValidationError, match="coordinates"):
         TimeseriesRequest(**_make_request_dict(selected_area=polygon))
+
+
+def test_series_needs_one_timestep_per_value():
+    from pydantic import ValidationError
+
+    from app.schemas.timeseries import NoSmoother, Series, SeriesOptions, TimeRange
+
+    options = SeriesOptions(name="raw", smoother=NoSmoother())
+    time_range = TimeRange(gte="0001", lte="0002")
+
+    Series(
+        options=options,
+        time_range=time_range,
+        timesteps=["0001", "0002"],
+        values=[1.0, None],
+    )
+    with pytest.raises(ValidationError, match="one timestep"):
+        Series(
+            options=options,
+            time_range=time_range,
+            timesteps=["0001"],
+            values=[1.0, 2.0],
+        )

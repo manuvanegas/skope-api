@@ -378,6 +378,7 @@ def test_extract_values_follow_the_axis_across_files(pipeline_client):
     series = _get_status(pipeline_client, job_id)["result"]["series"][0]
     # Months 11-14 of the axis span two COGs; each pixel holds its index + 1.
     assert series["values"] == [11.0, 12.0, 13.0, 14.0]
+    assert series["timesteps"] == ["0001-11", "0001-12", "0002-01", "0002-02"]
     assert series["time_range"] == {"gte": "0001-11", "lte": "0002-02"}
 
 
@@ -396,6 +397,7 @@ def test_analyze_range_finer_than_the_dataset_keeps_its_first_timestep(
 
     assert resp.status_code == 200
     assert resp.json()["series"][0]["values"] == [2.0, 3.0, 4.0]
+    assert resp.json()["series"][0]["timesteps"] == ["0002", "0003", "0004"]
 
 
 @pytest.mark.integration
