@@ -19,7 +19,7 @@ TEST_COMPOSE = SKOPE_RELEASE_ROOT=$(CURDIR)/timeseries/app/tests/registry/data \
 	-f deploy/compose/base.yml \
 	-f deploy/compose/dev.yml
 
-.PHONY: help check-environment check-release-pin prepare config build deploy \
+.PHONY: help check-environment check-release-pin verify-releases prepare config build deploy \
 	deploy-dev deploy-staging deploy-production down restart logs ps ingest release \
 	preflight-legacy-data migrate-legacy-data test test-api test-ingest
 
@@ -50,7 +50,10 @@ build: prepare ##- Build the selected environment's images
 	@$(COMPOSE) config --quiet
 	$(COMPOSE) build --pull
 
-deploy: check-release-pin build ##- Deploy ENVIRONMENT (defaults to dev) and wait for healthy services
+verify-releases: check-release-pin ##- Fully verify the pinned releases' bytes (promotion, TXN-011)
+	$(COMPOSE) run --rm --no-deps server python -m app.registry.verify
+
+deploy: check-release-pin build verify-releases ##- Deploy ENVIRONMENT (defaults to dev) and wait for healthy services
 	$(COMPOSE) up -d --remove-orphans --force-recreate --wait --wait-timeout 120
 
 deploy-dev: override ENVIRONMENT=dev
