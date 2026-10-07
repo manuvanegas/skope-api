@@ -3,7 +3,6 @@ COMPOSE_PROJECT_NAME ?= skope-api
 LEGACY_DATA_ROOT ?= /srv/ingest/incoming/skope
 MIGRATED_DATA_ROOT ?= timeseries/ingest/output/legacy-migration
 MIGRATION_SCRATCH_ROOT ?= timeseries/ingest/output/legacy-migration-scratch
-export DATASET_RELEASE_ROOT
 COMPOSE = docker compose --project-name $(COMPOSE_PROJECT_NAME) \
 	--project-directory . \
 	-f deploy/compose/base.yml \
@@ -20,7 +19,7 @@ TEST_COMPOSE = SKOPE_RELEASE_ROOT=$(CURDIR)/timeseries/app/tests/registry/data \
 	-f deploy/compose/base.yml \
 	-f deploy/compose/dev.yml
 
-.PHONY: help check-environment check-dataset-release check-release-pin prepare config build deploy \
+.PHONY: help check-environment check-release-pin prepare config build deploy \
 	deploy-dev deploy-staging deploy-production down restart logs ps ingest release \
 	preflight-legacy-data migrate-legacy-data test test-api test-ingest
 
@@ -41,26 +40,6 @@ check-environment:
 prepare: check-environment
 	@if [ "$(ENVIRONMENT)" = dev ]; then mkdir -p cog-input timeseries/ingest/output/releases; fi
 
-check-dataset-release: check-environment
-	@if [ "$(ENVIRONMENT)" != dev ]; then \
-	  test -n "$(DATASET_RELEASE_ROOT)" || { \
-	    echo "DATASET_RELEASE_ROOT is required for $(ENVIRONMENT); set it to /srv/datasets/releases/skope-r-YYYY.MM.DD[-N]" 1>&2; \
-	    exit 2; \
-	  }; \
-	  case "$(DATASET_RELEASE_ROOT)" in \
-	    /srv/datasets/releases/skope-r-*) ;; \
-	    *) echo "DATASET_RELEASE_ROOT must select an explicit /srv/datasets/releases/skope-r-YYYY.MM.DD[-N] directory" 1>&2; exit 2;; \
-	  esac; \
-	  test -d "$(DATASET_RELEASE_ROOT)" || { \
-	    echo "DATASET_RELEASE_ROOT is not a readable directory: $(DATASET_RELEASE_ROOT)" 1>&2; \
-	    exit 2; \
-	  }; \
-	  test -r "$(DATASET_RELEASE_ROOT)" || { \
-	    echo "DATASET_RELEASE_ROOT is not readable: $(DATASET_RELEASE_ROOT)" 1>&2; \
-	    exit 2; \
-	  }; \
-	fi
-
 check-release-pin: check-environment
 	@scripts/release-root.sh $(PIN_FILE) >/dev/null
 
@@ -71,7 +50,7 @@ build: prepare ##- Build the selected environment's images
 	@$(COMPOSE) config --quiet
 	$(COMPOSE) build --pull
 
-deploy: check-dataset-release check-release-pin build ##- Deploy ENVIRONMENT (defaults to dev) and wait for healthy services
+deploy: check-release-pin build ##- Deploy ENVIRONMENT (defaults to dev) and wait for healthy services
 	$(COMPOSE) up -d --remove-orphans --force-recreate --wait --wait-timeout 120
 
 deploy-dev: override ENVIRONMENT=dev

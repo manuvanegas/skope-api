@@ -5,8 +5,9 @@ Skope API is a FastAPI service for dataset metadata, COG raster tiles, and async
 ## Working Conventions
 
 - Use the root Make targets; tests and services run through Docker Compose.
-- `timeseries/metadata.yml` is the public dataset registry. Image builds also consume `deploy/metadata/{dev,staging,prod}.yml`, so registry changes may require updates in both places.
-- Dataset storage is resolved through `{dataset_id}/lookup.json`. Staging and production mount `/srv/datasets` read-only at `/data` in both the API and TiTiler containers.
+- The API serves the dataset releases pinned in `deploy/releases/<environment>.yml` (`docs/specs/release-consumption-v1.md`). At startup it checks each pinned release and composes its registry from their `overview.yml` files; any failed check stops the API.
+- The pin's `release_root` is mounted read-only at `/releases` in both the API and TiTiler containers; the Makefile reads it from the pin. A timestep resolves to its COG and band through the release's time-to-band rule (`timeseries/app/vendor/timeaxis.py`, a copy of the release build's).
+- `timeseries/metadata.yml` and `deploy/metadata/*.yml` are no longer read; they are deleted at the API/UI cutover.
 - Keep TiTiler internal. Public raster requests must pass through the API so identifiers are validated and storage paths remain private.
 - Extraction is asynchronous: clients submit, poll status, then analyze. Redis job records expire after 24 hours.
 - `base_series` is internal job state used by analysis and must never appear in status responses.
