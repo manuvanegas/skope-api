@@ -9,24 +9,26 @@ ENV UV_SYSTEM_PYTHON=1 \
 
 WORKDIR /ingest
 
+# Locked dependencies install before the code is copied, so a code change
+# reuses this layer and only reinstalls the project itself.
 COPY timeseries/ingest/pyproject.toml timeseries/ingest/uv.lock ./
+RUN uv export --format requirements.txt --no-dev --no-emit-project --locked --no-hashes --output-file requirements.lock && \
+    uv pip install --system --break-system-packages --no-cache -r requirements.lock
+
 COPY timeseries/ingest/src ./src
 COPY timeseries/ingest/README.md ./
 COPY timeseries/ingest/metadata.yml ./metadata.yml
 COPY timeseries/ingest/legacy-metadata.yml ./legacy-metadata.yml
 COPY timeseries/ingest/manifests ./manifests
-
-RUN uv export --format requirements.txt --no-dev --no-emit-project --locked --no-hashes --output-file requirements.lock && \
-    uv pip install --system --break-system-packages --no-cache -r requirements.lock && \
-    uv pip install --system --break-system-packages --no-cache --no-deps .
+RUN uv pip install --system --break-system-packages --no-cache --no-deps .
 
 CMD ["cog-stac-pipeline"]
 
 FROM runtime AS test
 
-COPY timeseries/ingest/tests ./tests
-
 RUN uv export --format requirements.txt --only-group dev --no-emit-project --locked --no-hashes --output-file requirements-dev.lock && \
     uv pip install --system --break-system-packages --no-cache -r requirements-dev.lock
+
+COPY timeseries/ingest/tests ./tests
 
 CMD ["pytest", "tests"]
