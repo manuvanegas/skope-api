@@ -1,7 +1,7 @@
 FROM ghcr.io/developmentseed/titiler:latest
 
 COPY titiler_custom/ /titiler_custom/
-COPY deploy/colormaps/custom.json /titiler_custom/custom.json
+COPY deploy/display/palettes.yml /titiler_custom/palettes.yml
 
 USER root
 RUN python3 /titiler_custom/build_colormaps.py
