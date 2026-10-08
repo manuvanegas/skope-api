@@ -20,6 +20,7 @@ from app.registry.compose import (
     verify_releases,
 )
 from app.registry.display import DisplayFileError, check_display, load_display
+from app.registry.metadata import build_metadata
 from app.store.jobs import cleanup_stale_jobs, create_job_store
 from app.routers.v3 import api as v3_api
 
@@ -75,6 +76,9 @@ async def lifespan(app: FastAPI):
             app.state.display,
             app.state.palettes,
         ) = compose_registry()
+        app.state.metadata = build_metadata(
+            app.state.registry, app.state.display, app.state.palettes
+        )
         await job_store.healthcheck()
         app.state.client = async_client
         app.state.job_store = job_store

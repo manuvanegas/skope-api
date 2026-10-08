@@ -419,3 +419,15 @@ def test_api_refuses_to_start_without_a_display_entry(tmp_path, monkeypatch):
         with TestClient(fastapi_app):
             pass
     assert [r.requirement for r in exc_info.value.refusals] == ["DISP-001"]
+
+
+@pytest.mark.integration
+def test_metadata_serves_schema_1_0_0_in_display_order(pipeline_client):
+    body = pipeline_client.get("/metadata").json()
+
+    assert body["schema_version"] == "1.0.0"
+    assert [d["id"] for d in body["datasets"]] == ["test_annual", "test_monthly"]
+    monthly = body["datasets"][1]
+    assert monthly["time"]["origin"] == "0001-01"
+    assert monthly["time"]["end"] == "0005-12"
+    assert monthly["variables"][0]["display"]["range"] == [1, 60]

@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 
 from app.config import get_settings
 from app.registry.compose import normalize_key
+from app.registry.metadata import MetadataResponse
 from app.schemas.timeseries import (
     TimeRange,
     TimeseriesAnalyzeRequest,
@@ -62,14 +63,13 @@ def _with_normalized_ranges(payload, precision: str):
 
 
 # Metadata
-@router.get("/metadata")
+@router.get("/metadata", response_model=MetadataResponse)
 async def get_global_index(request: Request):
-    """Returns the overview of every served release."""
-    registry = request.app.state.registry
-    return [
-        release.overview.model_dump(mode="json")
-        for release in registry.releases.values()
-    ]
+    """Every served dataset with its display settings, schema 1.0.0 (PROTO-001).
+
+    Built once at startup from the pinned releases and the display files.
+    """
+    return request.app.state.metadata
 
 
 # Tile streaming
